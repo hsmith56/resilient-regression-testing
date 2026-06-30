@@ -46,9 +46,9 @@ def print_report(report: RunReport, verbose: bool = False) -> None:
     )
 
     if report.cleanup_ran:
-        console.print(f"Cleanup deleted incidents: {report.cleanup_deleted_ids}")
+        console.print(f"Cleanup processed created incidents: {report.cleanup_deleted_ids}")
     else:
-        console.print("Cleanup skipped")
+        console.print("Cleanup skipped (--no-cleanup)")
 
 
 def _status(result: ScenarioResult) -> str:

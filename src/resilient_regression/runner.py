@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .cleanup import cleanup_created_incidents
-from .client import MockSoarClient
+from .client import BaseSoarClient, MockSoarClient
 from .models import RunReport, Scenario, ScenarioResult, ScenarioStep, StepResult
 from .validators import validate_incident
 
@@ -23,7 +23,7 @@ class RunnerConfig:
 
 
 class ScenarioRunner:
-    def __init__(self, client: MockSoarClient | None = None, config: RunnerConfig | None = None) -> None:
+    def __init__(self, client: BaseSoarClient | None = None, config: RunnerConfig | None = None) -> None:
         self.client = client or MockSoarClient()
         self.config = config or RunnerConfig()
 

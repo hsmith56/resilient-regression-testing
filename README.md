@@ -4,7 +4,7 @@
   <h3 align="center">Resilient Regression Testing</h3>
 
   <p align="center">
-    Python-only, YAML-driven dry-run regression runner for IBM SOAR / Resilient scenarios.
+    Python-only, YAML-driven regression runner for IBM SOAR / Resilient scenarios with dry-run and real API modes.
   </p>
 </div>
 
@@ -45,9 +45,9 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-Resilient Regression Testing runs declarative YAML scenarios against a local mocked IBM SOAR / Resilient incident store. It can create or target incidents, apply ordered actions, validate final incident state, report pass/fail results, and clean up incidents created during a run.
+Resilient Regression Testing runs declarative YAML scenarios against IBM SOAR / Resilient incident workflows. It can create or target incidents, apply ordered actions, validate final incident state, report pass/fail results, and clean up incidents created during a run.
 
-Current milestone is dry-run only. It does not connect to a real IBM SOAR instance yet.
+Use dry-run mode for local mock execution. Use real mode with an IBM Resilient `app.config` file to create, update, fetch, validate, and close real SOAR incidents through `resilient-circuits`.
 
 ### Built With
 
@@ -57,6 +57,7 @@ Current milestone is dry-run only. It does not connect to a real IBM SOAR instan
 * [![Pydantic][Pydantic]][Pydantic-url]
 * [![PyYAML][PyYAML]][PyYAML-url]
 * [![Rich][Rich]][Rich-url]
+* [![resilient-circuits][ResilientCircuits]][ResilientCircuits-url]
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -79,16 +80,22 @@ uv sync
 <!-- USAGE EXAMPLES -->
 ## Usage
 
-Run one YAML file:
+Run one YAML file in dry-run mode:
 
 ```sh
 uv run resilient-regression run scenarios/example.yaml --dry-run
 ```
 
-Run every `.yaml` / `.yml` file in a directory:
+Run every `.yaml` / `.yml` file in a directory in dry-run mode:
 
 ```sh
 uv run resilient-regression run scenarios --dry-run
+```
+
+Run against a real IBM SOAR / Resilient instance:
+
+```sh
+uv run resilient-regression run scenarios --config app.config
 ```
 
 Write a JSON report:
@@ -97,14 +104,17 @@ Write a JSON report:
 uv run resilient-regression run scenarios/example.yaml --dry-run --report-json reports/latest.json
 ```
 
-Optional flags:
+Mode and option rules:
 
 | Flag | Purpose |
 |---|---|
-| `--dry-run` | Use the local mocked SOAR client. Required for this milestone. |
-| `--no-cleanup` | Keep created mock incidents after the run. |
+| `--dry-run` | Use the local mocked SOAR client. Does not require `app.config`. |
+| `--config app.config` | Use real IBM SOAR API mode. Required when `--dry-run` is not passed. |
+| `--no-cleanup` | Skip cleanup for incidents created during the run. |
 | `--report-json PATH` | Write structured run results to JSON. |
 | `--verbose` | Print step-level execution output. |
+
+Real mode loads configuration with `resilient_circuits.helpers.get_configs(path_config_file=...)` and creates the API client with `resilient_circuits.rest_helper.get_resilient_client(opts)`. Environment-variable-only configuration is not supported. Secrets from `app.config` are not printed in setup errors or reports.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -142,19 +152,21 @@ scenario-name:
 
 `allow_failure` marks a known-broken scenario as non-fatal to the overall suite. The scenario still reports as an allowed failure.
 
+Cleanup stays scoped to incidents created during the current run. Scenario-provided `incident_id` values are never auto-cleaned. In dry-run mode cleanup deletes mock incidents; in real mode cleanup closes created incidents by default. Use `--no-cleanup` to skip cleanup, which is shown in the report.
+
 ### Supported Actions
 
-| YAML action | Dry-run behavior | Future SOAR API shape |
+| YAML action | Dry-run mode | Real mode |
 |---|---|---|
-| `create-inc` | Creates a mock incident and stores `${incident.*}` variables. | Create incident |
-| `update-inc` | Updates the current or targeted incident. | Update incident |
-| `add-note` | Appends a note to the current or targeted incident. | Add incident note |
-| `add-task` | Appends a task and stores `${task.*}` variables. | Create task |
-| `update-task` | Updates latest task or explicit task `id`. | Update task |
-| `close-incident` | Sets incident close/status fields. | Close/update incident |
-| `run-script` | Records a mock script run with inputs/result. | Run script / function |
-| `wait-before-run` | Parses wait duration; does not sleep in dry-run. | Wait between API calls |
-| `validate` | Reads incident state and applies assertions. | GET incident + assert response |
+| `create-inc` | Creates a mock incident and stores `${incident.*}` variables. | Creates a real incident. |
+| `update-inc` | Updates the current or targeted mock incident. | Updates the current or targeted real incident with PATCH-style payloads. |
+| `close-incident` | Sets incident close/status fields. | Updates/ closes the real incident. |
+| `wait-before-run` | Parses duration but does not sleep. | Sleeps before the next action. |
+| `validate` | Reads mock incident state and applies assertions. | Fetches latest real incident state and applies assertions. |
+| `add-note` | Appends a mock note. | Not supported yet; fails clearly. |
+| `add-task` | Appends a mock task and stores `${task.*}` variables. | Not supported yet; fails clearly. |
+| `update-task` | Updates latest mock task or explicit task `id`. | Not supported yet; fails clearly. |
+| `run-script` | Records a mock script run with inputs/result. | Dry-run only; fails clearly. |
 
 ### Pre-defined Variables
 
@@ -235,9 +247,6 @@ existing-incident-id-updates-existing-record:
     - update existing incident owner:
         update-inc:
           properties.owner: tier2
-    - add note to existing incident:
-        add-note:
-          text: "Working ${incident.name} by explicit incident id ${incident.id}"
     - close existing incident:
         close-incident:
           status: Closed
@@ -249,7 +258,7 @@ existing-incident-id-updates-existing-record:
     properties.owner: tier2
 ```
 
-#### 3. More complex: notes, tasks, script run, and close
+#### 3. More complex dry-run: notes, tasks, script run, and close
 
 ```yaml
 workflow-note-task-script-close:
@@ -306,7 +315,7 @@ Run unit tests:
 uv run pytest
 ```
 
-Tests cover YAML loading, dotted-path validation, scenario execution, supported actions, variable interpolation, existing incident targeting, allowed failures, and cleanup after failure.
+Tests cover YAML loading, dotted-path validation, scenario execution, mock and real client selection, real client payloads, supported actions, variable interpolation, existing incident targeting, allowed failures, unsupported real-mode actions, secret-safe config errors, and cleanup after failure.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -317,7 +326,8 @@ Tests cover YAML loading, dotted-path validation, scenario execution, supported 
 - [x] YAML scenario loader and Pydantic validation
 - [x] Terminal and JSON reports
 - [x] Notes, tasks, script runs, close actions, and explicit `incident_id`
-- [ ] Real IBM SOAR API client
+- [x] Real IBM SOAR client for create, update, fetch, validate, close, and close-based cleanup
+- [ ] Real notes, tasks, script execution, and delete cleanup support
 - [ ] Additional scenario actions and assertions
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -331,6 +341,8 @@ No license file is included yet.
 
 <!-- ACKNOWLEDGMENTS -->
 ## Acknowledgments
+
+* README style inspired by [Best-README-Template](https://github.com/othneildrew/Best-README-Template).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -347,3 +359,5 @@ No license file is included yet.
 [PyYAML-url]: https://pyyaml.org/
 [Rich]: https://img.shields.io/badge/Rich-000000?style=for-the-badge&logo=python&logoColor=white
 [Rich-url]: https://rich.readthedocs.io/
+[ResilientCircuits]: https://img.shields.io/badge/resilient--circuits-052FAD?style=for-the-badge&logo=ibm&logoColor=white
+[ResilientCircuits-url]: https://pypi.org/project/resilient-circuits/
