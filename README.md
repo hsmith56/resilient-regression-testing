@@ -182,16 +182,33 @@ Examples:
 * `tasks.0.status`
 * `script_runs.0.result.score`
 
-Supported assertions:
+Supported comparison functions:
 
-| Assertion | Example |
-|---|---|
-| equality shorthand | `name: Expected Name` |
-| `equals` | `status: { equals: Closed }` |
-| `contains` | `type_ids: { contains: phishing }` |
-| `exists` | `id: { exists: true }` |
-| `not_null` | `properties.owner: { not_null: true }` |
-| `is_null` | `properties.optional: { is_null: true }` |
+| Comparison | Passes when | Example |
+|---|---|---|
+| equality shorthand | Actual value equals expected value. | `name: Expected Name` |
+| `equals` | Actual value equals expected value. | `status: { equals: Closed }` |
+| `contains` | Actual list, tuple, set, string, dict key, or dict value contains expected value. | `type_ids: { contains: phishing }` |
+| `exists` | Path exists when `true`; path is missing when `false`. | `id: { exists: true }` |
+| `not_null` | Path exists and value is not `null`. | `properties.owner: { not_null: true }` |
+| `is_null` | Path is missing or value is `null`. | `properties.optional: { is_null: true }` |
+
+Example validation block using each comparison:
+
+```yaml
+validate:
+  name: Expected Name
+  status:
+    equals: Closed
+  type_ids:
+    contains: phishing
+  id:
+    exists: true
+  properties.owner:
+    not_null: true
+  properties.optional:
+    is_null: true
+```
 
 ### Examples
 
