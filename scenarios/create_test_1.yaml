@@ -1,8 +1,8 @@
-create-test-1-single-file:
-  - create-basic-incident:
+create-incident-standalone-file-one:
+  - create incident from first standalone file:
       create-inc:
-        name: Create Test 1 Single File
+        name: First Standalone Scenario Incident
   - validate:
       id:
         exists: true
-      name: Create Test 1 Single File
+      name: First Standalone Scenario Incident

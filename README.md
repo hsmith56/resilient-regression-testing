@@ -26,7 +26,15 @@
       </ul>
     </li>
     <li><a href="#usage">Usage</a></li>
-    <li><a href="#scenario-format">Scenario Format</a></li>
+    <li>
+      <a href="#scenario-authoring">Scenario Authoring</a>
+      <ul>
+        <li><a href="#supported-actions">Supported Actions</a></li>
+        <li><a href="#pre-defined-variables">Pre-defined Variables</a></li>
+        <li><a href="#validation">Validation</a></li>
+        <li><a href="#examples">Examples</a></li>
+      </ul>
+    </li>
     <li><a href="#testing">Testing</a></li>
     <li><a href="#roadmap">Roadmap</a></li>
     <li><a href="#license">License</a></li>
@@ -37,9 +45,9 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-Resilient Regression Testing runs declarative YAML scenarios against a local mocked IBM SOAR incident store. It creates and updates mock incidents, validates final incident state, reports pass/fail results, and cleans up created incidents at the end.
+Resilient Regression Testing runs declarative YAML scenarios against a local mocked IBM SOAR / Resilient incident store. It can create or target incidents, apply ordered actions, validate final incident state, report pass/fail results, and clean up incidents created during a run.
 
-Milestone 1 is intentionally dry-run only. It does not connect to a real IBM SOAR instance.
+Current milestone is dry-run only. It does not connect to a real IBM SOAR instance yet.
 
 ### Built With
 
@@ -62,8 +70,6 @@ Milestone 1 is intentionally dry-run only. It does not connect to a real IBM SOA
 
 ### Installation
 
-Install dependencies:
-
 ```sh
 uv sync
 ```
@@ -73,7 +79,7 @@ uv sync
 <!-- USAGE EXAMPLES -->
 ## Usage
 
-Run one scenario file:
+Run one YAML file:
 
 ```sh
 uv run resilient-regression run scenarios/example.yaml --dry-run
@@ -85,104 +91,192 @@ Run every `.yaml` / `.yml` file in a directory:
 uv run resilient-regression run scenarios --dry-run
 ```
 
-Write JSON report:
+Write a JSON report:
 
 ```sh
 uv run resilient-regression run scenarios/example.yaml --dry-run --report-json reports/latest.json
 ```
 
-Skip cleanup:
+Optional flags:
 
-```sh
-uv run resilient-regression run scenarios/example.yaml --dry-run --no-cleanup
-```
-
-Show step-level output:
-
-```sh
-uv run resilient-regression run scenarios/example.yaml --dry-run --verbose
-```
+| Flag | Purpose |
+|---|---|
+| `--dry-run` | Use the local mocked SOAR client. Required for this milestone. |
+| `--no-cleanup` | Keep created mock incidents after the run. |
+| `--report-json PATH` | Write structured run results to JSON. |
+| `--verbose` | Print step-level execution output. |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-<!-- SCENARIO FORMAT -->
-## Scenario Format
+<!-- SCENARIO AUTHORING -->
+## Scenario Authoring
 
-One YAML file can contain many tests:
+A YAML file can contain one or more scenarios. Each scenario can use list-style syntax or mapping-style syntax.
+
+Use list-style syntax for scenarios that create their own incident:
 
 ```yaml
-create-test-1:
-  - create-basic-incident:
+scenario-name:
+  - step name:
       create-inc:
-        name: Create Test 1
+        name: Example Incident
   - validate:
-      id:
-        exists: true
-      name: Create Test 1
-
-create-test-2:
-  - create-basic-incident:
-      create-inc:
-        name: Create Test 2
-  - validate:
-      id:
-        exists: true
-      name: Create Test 2
+      name: Example Incident
 ```
 
-One directory can also contain many YAML files. Passing the directory runs all of them.
-
-`allow_failure` marks known-broken scenarios as non-fatal to the suite:
+Use mapping-style syntax when you need scenario metadata such as `allow_failure` or `incident_id`:
 
 ```yaml
-known-broken-test:
+scenario-name:
   allow_failure: true
+  incident_id: 1
   steps:
-    - create-basic-incident:
-        create-inc:
-          name: Known Broken Incident
-    - validate:
-        name: Expected Different Name
+    - step name:
+        update-inc:
+          properties.owner: tier2
+  validate:
+    properties.owner: tier2
 ```
 
-Original list-style syntax remains supported:
+`incident_id` targets an existing incident instead of creating a new one. The scenario fails if that incident does not exist. This is useful for tests that update fields, add notes, update tasks, run scripts, or close a pre-existing incident.
+
+`allow_failure` marks a known-broken scenario as non-fatal to the overall suite. The scenario still reports as an allowed failure.
+
+### Supported Actions
+
+| YAML action | Dry-run behavior | Future SOAR API shape |
+|---|---|---|
+| `create-inc` | Creates a mock incident and stores `${incident.*}` variables. | Create incident |
+| `update-inc` | Updates the current or targeted incident. | Update incident |
+| `add-note` | Appends a note to the current or targeted incident. | Add incident note |
+| `add-task` | Appends a task and stores `${task.*}` variables. | Create task |
+| `update-task` | Updates latest task or explicit task `id`. | Update task |
+| `close-incident` | Sets incident close/status fields. | Close/update incident |
+| `run-script` | Records a mock script run with inputs/result. | Run script / function |
+| `wait-before-run` | Parses wait duration; does not sleep in dry-run. | Wait between API calls |
+| `validate` | Reads incident state and applies assertions. | GET incident + assert response |
+
+### Pre-defined Variables
+
+Variables can be used in action values. Incident and task values are intentionally separate.
+
+| Variable | Source | Notes |
+|---|---|---|
+| `${incident.id}` | Latest created, updated, closed, or targeted incident | Different from task id |
+| `${incident.name}` | Latest incident `name` | Different from task name |
+| `${incident.status}` | Latest incident `status` | Defaults to `Active`, becomes `Closed` after close |
+| `${task.id}` | Latest created or updated task | Different from incident id |
+| `${task.name}` | Latest task `name` | Different from incident name |
+| `${task.status}` | Latest task `status` | Defaults to `Open` unless specified |
+
+### Validation
+
+Validation supports dotted paths, list indexes, and the normalized `incident.` prefix.
+
+Examples:
+
+* `properties.field_1`
+* `type_ids`
+* `incident.type_ids`
+* `notes.0.text`
+* `tasks.0.status`
+* `script_runs.0.result.score`
+
+Supported assertions:
+
+| Assertion | Example |
+|---|---|
+| equality shorthand | `name: Expected Name` |
+| `equals` | `status: { equals: Closed }` |
+| `contains` | `type_ids: { contains: phishing }` |
+| `exists` | `id: { exists: true }` |
+| `not_null` | `properties.owner: { not_null: true }` |
+| `is_null` | `properties.optional: { is_null: true }` |
+
+### Examples
+
+#### 1. Simple: create an incident and verify it exists
 
 ```yaml
-test-abc:
-  - step-1:
+create-basic-incident:
+  - create basic incident:
       create-inc:
-        name: Test Incident
-        description: Regression test
-        properties.field_1: field_1_val
-        type_ids:
-          - expected_incident_type_val
-  - step-2:
-      wait-before-run: 10 sec
-      update-inc:
-        properties.field_5: expected_val_field_5
+        name: Basic Created Incident
+        description: Verifies the mock runner can create an incident
   - validate:
-      properties.field_5: expected_val_field_5
-      incident.type_ids:
-        contains: expected_incident_type_val
+      id:
+        exists: true
+      name: Basic Created Incident
 ```
 
-Supported step actions:
+#### 2. Simple: update an existing incident by `incident_id`
 
-* `create-inc`
-* `update-inc`
-* `wait-before-run` (parsed, but not slept in dry-run mode)
-* `validate`
+```yaml
+existing-incident-id-updates-existing-record:
+  incident_id: 1
+  steps:
+    - update existing incident owner:
+        update-inc:
+          properties.owner: tier2
+    - add note to existing incident:
+        add-note:
+          text: "Working ${incident.name} by explicit incident id ${incident.id}"
+    - close existing incident:
+        close-incident:
+          status: Closed
+          resolution: Re-validated via explicit incident_id
+  validate:
+    id: 1
+    status: Closed
+    resolution: Re-validated via explicit incident_id
+    properties.owner: tier2
+```
 
-Supported validation assertions:
+#### 3. More complex: notes, tasks, script run, and close
 
-* equality shorthand: `properties.field_1: expected`
-* `equals`
-* `contains`
-* `exists`
-* `not_null`
-* `is_null`
-
-Dotted paths support `properties.field_1`, `type_ids`, and normalized `incident.type_ids`.
+```yaml
+workflow-note-task-script-close:
+  - create phishing incident:
+      create-inc:
+        name: Phishing Regression Incident
+        properties.severity: High
+        type_ids:
+          - phishing
+  - add opening note with incident variables:
+      add-note:
+        text: "Created ${incident.name} with incident id ${incident.id}"
+  - add triage task with incident variables:
+      add-task:
+        name: "Triage ${incident.name}"
+        status: Open
+  - mark triage task complete using task id variable:
+      update-task:
+        id: "${task.id}"
+        status: Complete
+        resolution: triaged
+  - run enrichment script with incident and task variables:
+      run-script:
+        name: Mock Enrichment Script
+        inputs:
+          incident_id: "${incident.id}"
+          task_id: "${task.id}"
+        result:
+          enriched: true
+          score: 95
+  - close incident with resolution:
+      close-incident:
+        status: Closed
+        resolution: Resolved by dry-run regression
+  - validate:
+      status: Closed
+      resolution: Resolved by dry-run regression
+      properties.severity: High
+      type_ids:
+        contains: phishing
+      notes.0.text: "Created Phishing Regression Incident with incident id 1"
+      tasks.0.status: Complete
+      script_runs.0.result.score: 95
+```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -195,7 +289,7 @@ Run unit tests:
 uv run pytest
 ```
 
-Tests cover YAML loading, dotted-path validation, scenario execution, and cleanup after failure.
+Tests cover YAML loading, dotted-path validation, scenario execution, supported actions, variable interpolation, existing incident targeting, allowed failures, and cleanup after failure.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -205,6 +299,7 @@ Tests cover YAML loading, dotted-path validation, scenario execution, and cleanu
 - [x] Local dry-run runner with mocked incident store
 - [x] YAML scenario loader and Pydantic validation
 - [x] Terminal and JSON reports
+- [x] Notes, tasks, script runs, close actions, and explicit `incident_id`
 - [ ] Real IBM SOAR API client
 - [ ] Additional scenario actions and assertions
 
@@ -219,8 +314,6 @@ No license file is included yet.
 
 <!-- ACKNOWLEDGMENTS -->
 ## Acknowledgments
-
-* README style inspired by [Best-README-Template](https://github.com/othneildrew/Best-README-Template).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

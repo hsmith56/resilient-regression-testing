@@ -1,0 +1,94 @@
+workflow-note-task-script-close:
+  - create phishing incident:
+      create-inc:
+        name: Phishing Regression Incident
+        description: Exercises note, task, script, and close actions
+        properties.severity: High
+        type_ids:
+          - phishing
+  - add opening note with incident variables:
+      add-note:
+        text: "Created ${incident.name} with incident id ${incident.id}"
+  - add triage task with incident variables:
+      add-task:
+        name: "Triage ${incident.name}"
+        description: "Task attached to incident ${incident.id}"
+        status: Open
+  - mark triage task complete using task id variable:
+      update-task:
+        id: "${task.id}"
+        status: Complete
+        resolution: triaged
+  - add containment task to prove task variables update:
+      add-task:
+        name: "Contain ${incident.name}"
+        status: Open
+  - run enrichment script with incident and task variables:
+      run-script:
+        name: Mock Enrichment Script
+        status: Completed
+        inputs:
+          incident_id: "${incident.id}"
+          latest_task_id: "${task.id}"
+        result:
+          enriched: true
+          score: 95
+  - add note referencing latest task variables:
+      add-note:
+        text: "Latest task ${task.name} is ${task.status}"
+  - close incident with resolution:
+      close-incident:
+        status: Closed
+        resolution: Resolved by dry-run regression
+  - validate:
+      name: Phishing Regression Incident
+      status: Closed
+      resolution: Resolved by dry-run regression
+      properties.severity: High
+      type_ids:
+        contains: phishing
+      notes.0.text: "Created Phishing Regression Incident with incident id 1"
+      notes.1.text: "Latest task Contain Phishing Regression Incident is Open"
+      tasks.0.name: "Triage Phishing Regression Incident"
+      tasks.0.status: Complete
+      tasks.0.resolution: triaged
+      tasks.1.name: "Contain Phishing Regression Incident"
+      tasks.1.status: Open
+      script_runs.0.name: Mock Enrichment Script
+      script_runs.0.status: Completed
+      script_runs.0.inputs.incident_id: 1
+      script_runs.0.inputs.latest_task_id: 1001
+      script_runs.0.result.enriched: true
+      script_runs.0.result.score: 95
+
+existing-incident-id-updates-existing-record:
+  incident_id: 1
+  steps:
+    - update existing incident owner:
+        update-inc:
+          properties.owner: tier2
+    - add note to existing incident:
+        add-note:
+          text: "Re-opened ${incident.name} by explicit incident id ${incident.id}"
+    - close existing triage task by explicit id:
+        update-task:
+          id: 1000
+          status: Verified Closed
+    - run script against existing incident id:
+        run-script:
+          name: Existing Incident Follow-up Script
+          inputs:
+            incident_id: "${incident.id}"
+    - close existing incident again:
+        close-incident:
+          status: Closed
+          resolution: Re-validated via explicit incident_id
+  validate:
+    id: 1
+    status: Closed
+    resolution: Re-validated via explicit incident_id
+    properties.owner: tier2
+    notes.2.text: "Re-opened Phishing Regression Incident by explicit incident id 1"
+    tasks.0.status: Verified Closed
+    script_runs.1.name: Existing Incident Follow-up Script
+    script_runs.1.inputs.incident_id: 1

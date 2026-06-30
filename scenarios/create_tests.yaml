@@ -1,17 +1,17 @@
-create-test-1:
-  - create-basic-incident:
+create-incident-combined-file-one:
+  - create incident from combined file:
       create-inc:
-        name: Create Test 1
+        name: Multi Scenario Incident One
   - validate:
       id:
         exists: true
-      name: Create Test 1
+      name: Multi Scenario Incident One
 
-create-test-2:
-  - create-basic-incident:
+create-incident-combined-file-two:
+  - create second incident from combined file:
       create-inc:
-        name: Create Test 2
+        name: Multi Scenario Incident Two
   - validate:
       id:
         exists: true
-      name: Create Test 2
+      name: Multi Scenario Incident Two

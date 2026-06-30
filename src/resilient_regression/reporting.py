@@ -21,9 +21,9 @@ def print_report(report: RunReport, verbose: bool = False) -> None:
     for source, results in grouped.items():
         console.print(source)
         table = Table()
-        table.add_column("Scenario")
-        table.add_column("Status")
-        table.add_column("Details")
+        table.add_column("Scenario", overflow="fold")
+        table.add_column("Status", no_wrap=True)
+        table.add_column("Details", overflow="fold")
 
         for result in results:
             table.add_row(result.id, _status(result), _details(result))

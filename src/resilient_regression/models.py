@@ -14,13 +14,28 @@ class ScenarioStep(BaseModel):
     name: str
     create_inc: dict[str, Any] | None = Field(default=None, alias="create-inc")
     update_inc: dict[str, Any] | None = Field(default=None, alias="update-inc")
+    add_note: dict[str, Any] | str | None = Field(default=None, alias="add-note")
+    add_task: dict[str, Any] | None = Field(default=None, alias="add-task")
+    update_task: dict[str, Any] | None = Field(default=None, alias="update-task")
+    close_incident: dict[str, Any] | str | None = Field(default=None, alias="close-incident")
+    run_script: dict[str, Any] | None = Field(default=None, alias="run-script")
     wait_before_run: str | int | float | None = Field(default=None, alias="wait-before-run")
 
     model_config = {"populate_by_name": True, "extra": "forbid"}
 
     @model_validator(mode="after")
     def require_action(self) -> "ScenarioStep":
-        if self.create_inc is None and self.update_inc is None and self.wait_before_run is None:
+        actions = [
+            self.create_inc,
+            self.update_inc,
+            self.add_note,
+            self.add_task,
+            self.update_task,
+            self.close_incident,
+            self.run_script,
+            self.wait_before_run,
+        ]
+        if all(action is None for action in actions):
             raise ValueError(f"step '{self.name}' must define an action or wait-before-run")
         return self
 
@@ -30,6 +45,7 @@ class Scenario(BaseModel):
     steps: list[ScenarioStep]
     validations: dict[str, Any] = Field(default_factory=dict, alias="validate")
     allow_failure: bool = False
+    incident_id: int | None = None
     source: Path | None = None
 
     model_config = {"arbitrary_types_allowed": True, "populate_by_name": True}

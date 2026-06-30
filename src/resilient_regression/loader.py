@@ -50,9 +50,11 @@ def load_scenario_file(path: str | Path) -> list[Scenario]:
 
 def _parse_scenario(scenario_id: str, definition: Any, source: Path) -> Scenario:
     allow_failure = False
+    incident_id: int | None = None
 
     if isinstance(definition, dict):
         allow_failure = bool(definition.get("allow_failure", False))
+        incident_id = definition.get("incident_id")
         entries = definition.get("steps", [])
         validate = definition.get("validate", {}) or {}
     elif isinstance(definition, list):
@@ -74,6 +76,9 @@ def _parse_scenario(scenario_id: str, definition: Any, source: Path) -> Scenario
         if step_name == "allow_failure":
             allow_failure = bool(body)
             continue
+        if step_name == "incident_id":
+            incident_id = int(body)
+            continue
         if body is None:
             body = {}
         if not isinstance(body, dict):
@@ -92,6 +97,7 @@ def _parse_scenario(scenario_id: str, definition: Any, source: Path) -> Scenario
             steps=steps,
             validations=validate,
             allow_failure=allow_failure,
+            incident_id=incident_id,
             source=source,
         )
     except ValidationError as exc:

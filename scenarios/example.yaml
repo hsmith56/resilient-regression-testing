@@ -1,5 +1,5 @@
-incident-created:
-  - create-basic-incident:
+create-basic-incident:
+  - create basic incident:
       create-inc:
         name: Basic Created Incident
         description: Verifies the mock runner can create an incident
@@ -8,25 +8,25 @@ incident-created:
         exists: true
       name: Basic Created Incident
 
-allowed-to-fail-example:
+allow-failure-known-broken-name:
   allow_failure: true
   steps:
-    - create-basic-incident:
+    - create incident with current incorrect name:
         create-inc:
           name: Known Broken Incident
     - validate:
         name: Expected Different Name
 
-test-abc:
-  - step-1:
+update-properties-and-type-check:
+  - create incident with initial properties and type:
       create-inc:
-        name: Test Incident
-        description: Regression test
+        name: Property Validation Incident
+        description: Regression test for incident property updates
         properties.field_1: field_1_val
         properties.field_2: field_2_val
         type_ids:
           - expected_incident_type_val
-  - step-2:
+  - wait before updating incident without sleeping in dry-run:
       wait-before-run: 10 sec
       update-inc:
         properties.field_3: field_3_val
