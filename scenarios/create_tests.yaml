@@ -1,0 +1,17 @@
+create-test-1:
+  - create-basic-incident:
+      create-inc:
+        name: Create Test 1
+  - validate:
+      id:
+        exists: true
+      name: Create Test 1
+
+create-test-2:
+  - create-basic-incident:
+      create-inc:
+        name: Create Test 2
+  - validate:
+      id:
+        exists: true
+      name: Create Test 2

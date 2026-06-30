@@ -1,0 +1,38 @@
+incident-created:
+  - create-basic-incident:
+      create-inc:
+        name: Basic Created Incident
+        description: Verifies the mock runner can create an incident
+  - validate:
+      id:
+        exists: true
+      name: Basic Created Incident
+
+allowed-to-fail-example:
+  allow_failure: true
+  steps:
+    - create-basic-incident:
+        create-inc:
+          name: Known Broken Incident
+    - validate:
+        name: Expected Different Name
+
+test-abc:
+  - step-1:
+      create-inc:
+        name: Test Incident
+        description: Regression test
+        properties.field_1: field_1_val
+        properties.field_2: field_2_val
+        type_ids:
+          - expected_incident_type_val
+  - step-2:
+      wait-before-run: 10 sec
+      update-inc:
+        properties.field_3: field_3_val
+        properties.field_5: expected_val_field_5
+  - validate:
+      properties.field_1: field_1_val
+      properties.field_5: expected_val_field_5
+      incident.type_ids:
+        contains: expected_incident_type_val

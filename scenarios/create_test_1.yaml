@@ -1,0 +1,8 @@
+create-test-1-single-file:
+  - create-basic-incident:
+      create-inc:
+        name: Create Test 1 Single File
+  - validate:
+      id:
+        exists: true
+      name: Create Test 1 Single File
