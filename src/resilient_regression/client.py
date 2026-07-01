@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import configparser
+import inspect
+import time
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -56,6 +58,37 @@ def expand_dotted_fields(fields: dict[str, Any]) -> dict[str, Any]:
         else:
             expanded[key] = value
     return expanded
+
+def build_create_incident_payload(fields: dict[str, Any], now_ms: int | None = None) -> dict[str, Any]:
+    """Build IBM SOAR /incidents payload from create-inc fields."""
+    if "name" not in fields or fields["name"] in (None, ""):
+        raise SoarClientError("create-inc requires name")
+
+    timestamp = int(time.time() * 1000) if now_ms is None else now_ms
+    payload: dict[str, Any] = {
+        "name": fields["name"],
+        "discovered_date": timestamp,
+        "start_date": timestamp,
+    }
+
+    description = fields.get("description")
+    if description is not None:
+        payload["description"] = description
+
+    properties: dict[str, Any] = {}
+    for key, value in fields.items():
+        if key in {"name", "description"}:
+            continue
+        if key == "properties" and isinstance(value, dict):
+            properties.update(value)
+        elif key.startswith("properties."):
+            set_dotted(properties, key.removeprefix("properties."), value)
+        else:
+            properties[key] = value
+
+    if properties:
+        payload["properties"] = properties
+    return payload
 
 
 class BaseSoarClient:
@@ -219,7 +252,7 @@ class RealSoarClient(BaseSoarClient):
         self._client = resilient_client or _build_resilient_client(self.config_path)
 
     def create_incident(self, fields: dict[str, Any]) -> dict[str, Any]:
-        incident = self._request("post", "/incidents", expand_dotted_fields(fields))
+        incident = self._request("post", "/incidents", build_create_incident_payload(fields), timeout=50)
         self.created_incident_ids.append(int(incident["id"]))
         return incident
 
@@ -239,19 +272,42 @@ class RealSoarClient(BaseSoarClient):
 
     def delete_incident(self, incident_id: int) -> None:
         if not self.allow_delete:
-            raise UnsupportedRealActionError("delete incident is disabled; cleanup closes incidents instead")
-        self._request("delete", f"/incidents/{incident_id}")
+            raise UnsupportedRealActionError("delete incident is disabled")
+        self._request("put", "/incidents/delete", [incident_id])
 
-    def _request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    def cleanup_created_incidents(self) -> list[int]:
+        ids = list(self.created_incident_ids)
+        if ids:
+            self._request("put", "/incidents/delete", ids)
+        return ids
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | list[int] | None = None,
+        timeout: int | None = None,
+    ) -> dict[str, Any]:
         try:
             client_method = getattr(self._client, method)
+            kwargs = {"timeout": timeout} if timeout is not None and _accepts_keyword(client_method, "timeout") else {}
             if payload is None:
-                result = client_method(path)
+                result = client_method(path, **kwargs)
             else:
-                result = client_method(path, payload)
+                result = client_method(path, payload, **kwargs)
         except Exception as exc:
             raise SoarClientError(f"SOAR API {method.upper()} {path} failed") from exc
         return result or {}
+
+def _accepts_keyword(func: Any, keyword: str) -> bool:
+    try:
+        signature = inspect.signature(func)
+    except (TypeError, ValueError):
+        return False
+    return any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD or name == keyword
+        for name, parameter in signature.parameters.items()
+    )
 
 
 def _build_resilient_client(config_path: Path) -> Any:

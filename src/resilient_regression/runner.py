@@ -165,15 +165,23 @@ def _require_incident_id(incident_id: int | None, step_name: str, action: str) -
 
 
 def _store_incident_variables(variables: dict[str, Any], incident: dict[str, Any]) -> None:
-    variables["incident.id"] = incident.get("id")
-    variables["incident.name"] = incident.get("name")
-    variables["incident.status"] = incident.get("status")
+    _store_dotted_variables(variables, "incident", incident)
 
 
 def _store_task_variables(variables: dict[str, Any], task: dict[str, Any]) -> None:
-    variables["task.id"] = task.get("id")
-    variables["task.name"] = task.get("name")
-    variables["task.status"] = task.get("status")
+    _store_dotted_variables(variables, "task", task)
+
+
+def _store_dotted_variables(variables: dict[str, Any], prefix: str, value: Any) -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            _store_dotted_variables(variables, f"{prefix}.{key}", item)
+        return
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            _store_dotted_variables(variables, f"{prefix}.{index}", item)
+        return
+    variables[prefix] = value
 
 
 def _resolve_value(value: Any, variables: dict[str, Any]) -> Any:

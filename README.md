@@ -152,7 +152,7 @@ scenario-name:
 
 `allow_failure` marks a known-broken scenario as non-fatal to the overall suite. The scenario still reports as an allowed failure.
 
-Cleanup stays scoped to incidents created during the current run. Scenario-provided `incident_id` values are never auto-cleaned. In dry-run mode cleanup deletes mock incidents; in real mode cleanup closes created incidents by default. Use `--no-cleanup` to skip cleanup, which is shown in the report.
+Cleanup stays scoped to incidents created during the current run. Scenario-provided `incident_id` values are never auto-cleaned. In dry-run mode cleanup deletes mock incidents; in real mode cleanup deletes created incidents with `PUT /incidents/delete` and a JSON array of incident IDs. Use `--no-cleanup` to skip cleanup, which is shown in the report.
 
 ### Supported Actions
 
@@ -326,8 +326,8 @@ Tests cover YAML loading, dotted-path validation, scenario execution, mock and r
 - [x] YAML scenario loader and Pydantic validation
 - [x] Terminal and JSON reports
 - [x] Notes, tasks, script runs, close actions, and explicit `incident_id`
-- [x] Real IBM SOAR client for create, update, fetch, validate, close, and close-based cleanup
-- [ ] Real notes, tasks, script execution, and delete cleanup support
+- [x] Real IBM SOAR client for create, update, fetch, validate, close, and delete cleanup
+- [ ] Real notes, tasks, and script execution support
 - [ ] Additional scenario actions and assertions
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>

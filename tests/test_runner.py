@@ -177,6 +177,22 @@ def test_complex_workflow_handles_multiple_notes_multiple_tasks_explicit_task_id
     assert report.passed is True
 
 
+def test_incident_response_fields_are_available_as_dotted_variables():
+    scenario = Scenario(
+        id="created-incident-response-is-available-to-later-steps",
+        steps=[
+            ScenarioStep(name="create incident", create_inc={"name": "Variable Test", "properties": {"ticket": "TCK-1"}}),
+            ScenarioStep(name="copy response property", update_inc={"properties.copied_ticket": "${incident.properties.ticket}"}),
+        ],
+        validate={"properties.copied_ticket": "TCK-1"},
+    )
+    runner = ScenarioRunner(config=RunnerConfig(dry_run=True))
+
+    report = runner.run([scenario])
+
+    assert report.passed is True
+
+
 def test_wait_only_step_is_reported_without_sleeping_in_dry_run():
     scenario = Scenario(
         id="wait-step-is-recorded-but-does-not-sleep-in-dry-run",

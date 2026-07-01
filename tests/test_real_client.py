@@ -24,7 +24,7 @@ api_key_secret={secret}
 
 class RecordingRestClient:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str, dict[str, Any] | None]] = []
+        self.calls: list[tuple[str, str, dict[str, Any] | list[int] | None]] = []
         self.incidents: dict[int, dict[str, Any]] = {}
 
     def post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -46,18 +46,31 @@ class RecordingRestClient:
         self.calls.append(("delete", path, None))
         return {}
 
+    def put(self, path: str, payload: list[int]) -> dict[str, Any]:
+        self.calls.append(("put", path, payload))
+        for incident_id in payload:
+            self.incidents.pop(incident_id, None)
+        return {}
 
-def test_real_client_uses_resilient_client_methods_and_builds_dotted_payloads(tmp_path: Path):
+
+def test_real_client_uses_resilient_client_methods_and_builds_dotted_payloads(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("resilient_regression.client.time.time", lambda: 123.456)
     rest_client = RecordingRestClient()
     client = RealSoarClient(write_app_config(tmp_path / "app.config"), resilient_client=rest_client)
 
-    incident = client.create_incident({"name": "Regression", "properties.test_field": "initial"})
+    incident = client.create_incident({"name": "Regression", "description": "Created by test", "test_field": "initial"})
     updated = client.update_incident(incident["id"], {"properties.test_field": "updated"})
 
     assert rest_client.calls[0] == (
         "post",
         "/incidents",
-        {"name": "Regression", "properties": {"test_field": "initial"}},
+        {
+            "name": "Regression",
+            "discovered_date": 123456,
+            "start_date": 123456,
+            "description": "Created by test",
+            "properties": {"test_field": "initial"},
+        },
     )
     assert rest_client.calls[1] == ("patch", "/incidents/1", {"properties": {"test_field": "updated"}})
     assert rest_client.calls[2] == ("get", "/incidents/1", None)
@@ -119,6 +132,25 @@ def test_cleanup_runs_after_real_mode_failure_and_closes_created_incident():
     assert "run-script is dry-run only" in report.results[0].error
     assert report.cleanup_ran is True
     assert client.closed_ids == [1]
+
+
+def test_real_cleanup_uses_bulk_delete_endpoint(tmp_path: Path):
+    rest_client = RecordingRestClient()
+    client = RealSoarClient(write_app_config(tmp_path / "app.config"), resilient_client=rest_client)
+    scenario = Scenario(
+        id="real-cleanup-uses-delete-endpoint",
+        steps=[
+            ScenarioStep(name="create real incident", create_inc={"name": "Real"}),
+            ScenarioStep(name="unsupported real script", run_script={"name": "Not Supported"}),
+        ],
+    )
+    runner = ScenarioRunner(client=client, config=RunnerConfig(dry_run=False))
+
+    report = runner.run([scenario])
+
+    assert report.passed is False
+    assert report.cleanup_deleted_ids == [1]
+    assert ("put", "/incidents/delete", [1]) in rest_client.calls
 
 
 def test_user_provided_incident_id_is_not_auto_cleaned():
