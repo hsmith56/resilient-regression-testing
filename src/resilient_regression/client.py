@@ -257,8 +257,7 @@ class RealSoarClient(BaseSoarClient):
         return incident
 
     def update_incident(self, incident_id: int, fields: dict[str, Any]) -> dict[str, Any]:
-        payload = expand_dotted_fields(fields)
-        self._request("patch", f"/incidents/{incident_id}", payload)
+        self._request("patch", f"/incidents/{incident_id}", fields)
         return self.get_incident(incident_id)
 
     def get_incident(self, incident_id: int) -> dict[str, Any]:

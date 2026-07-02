@@ -1,9 +1,10 @@
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from resilient_regression.client import BaseSoarClient, RealSoarClient
+from resilient_regression.client import BaseSoarClient, RealSoarClient, set_dotted
 from resilient_regression.models import Scenario, ScenarioStep
 from resilient_regression.runner import RunnerConfig, ScenarioRunner
 
@@ -28,14 +29,18 @@ class RecordingRestClient:
         self.incidents: dict[int, dict[str, Any]] = {}
 
     def post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
-        self.calls.append(("post", path, payload))
+        self.calls.append(("post", path, deepcopy(payload)))
         incident = {"id": 1, "status": "Active", **payload}
         self.incidents[1] = incident
         return incident
 
     def patch(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
-        self.calls.append(("patch", path, payload))
-        self.incidents[1].update(payload)
+        self.calls.append(("patch", path, deepcopy(payload)))
+        for key, value in payload.items():
+            if "." in key:
+                set_dotted(self.incidents[1], key, value)
+            else:
+                self.incidents[1][key] = value
         return self.incidents[1]
 
     def get(self, path: str) -> dict[str, Any]:
@@ -72,7 +77,7 @@ def test_real_client_uses_resilient_client_methods_and_builds_dotted_payloads(tm
             "properties": {"test_field": "initial"},
         },
     )
-    assert rest_client.calls[1] == ("patch", "/incidents/1", {"properties": {"test_field": "updated"}})
+    assert rest_client.calls[1] == ("patch", "/incidents/1", {"properties.test_field": "updated"})
     assert rest_client.calls[2] == ("get", "/incidents/1", None)
     assert updated["properties"] == {"test_field": "updated"}
 
