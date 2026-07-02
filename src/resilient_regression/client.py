@@ -5,6 +5,7 @@ import time
 from copy import deepcopy
 from typing import Any
 
+from resilient import Patch as ResilientPatch
 
 _MISSING = object()
 
@@ -56,6 +57,18 @@ def expand_dotted_fields(fields: dict[str, Any]) -> dict[str, Any]:
         else:
             expanded[key] = value
     return expanded
+
+def normalize_patch_field_name(field_name: str) -> str:
+    normalized = normalize_path(field_name)
+    return normalized.removeprefix("properties.")
+
+
+def build_resilient_patch(incident: dict[str, Any], fields: dict[str, Any]) -> Any:
+    patch = ResilientPatch(incident)
+    for field_name, value in fields.items():
+        patch.add_value(normalize_patch_field_name(field_name), value)
+    return patch
+
 
 def build_create_incident_payload(fields: dict[str, Any], now_ms: int | None = None) -> dict[str, Any]:
     """Build IBM SOAR /incidents payload from create-inc fields."""
@@ -274,7 +287,10 @@ class RealSoarClient(BaseSoarClient):
         return incident
 
     def update_incident(self, incident_id: int, fields: dict[str, Any]) -> dict[str, Any]:
-        self._request("patch", f"/incidents/{incident_id}", fields)
+        uri = f"/incidents/{incident_id}"
+        incident = self.get_incident(incident_id)
+        patch = build_resilient_patch(incident, fields)
+        self._request("patch", uri, patch, overwrite_conflict=True)
         return self.get_incident(incident_id)
 
     def get_incident(self, incident_id: int) -> dict[str, Any]:
@@ -301,12 +317,14 @@ class RealSoarClient(BaseSoarClient):
         self,
         method: str,
         path: str,
-        payload: dict[str, Any] | list[int] | None = None,
+        payload: Any | None = None,
         timeout: int | None = None,
+        **request_kwargs: Any,
     ) -> dict[str, Any]:
         try:
             client_method = getattr(self._client, method)
             kwargs = {"timeout": timeout} if timeout is not None and _accepts_keyword(client_method, "timeout") else {}
+            kwargs.update(request_kwargs)
             if payload is None:
                 result = client_method(path, **kwargs)
             else:

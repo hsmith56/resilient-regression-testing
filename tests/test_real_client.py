@@ -3,13 +3,21 @@ from typing import Any
 
 import pytest
 
-from resilient_regression.client import BaseSoarClient, RealSoarClient, SoarClientError, build_resilient_options, set_dotted
+from resilient_regression.client import BaseSoarClient, RealSoarClient, SoarClientError, build_resilient_options, normalize_patch_field_name, set_dotted
+
+class FakePatch:
+    def __init__(self, incident: dict[str, Any]) -> None:
+        self.incident = deepcopy(incident)
+        self.values: dict[str, Any] = {}
+
+    def add_value(self, field_name: str, value: Any) -> None:
+        self.values[field_name] = value
 from resilient_regression.models import Scenario, ScenarioStep
 from resilient_regression.runner import RunnerConfig, ScenarioRunner
 
 class RecordingRestClient:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str, dict[str, Any] | list[int] | None]] = []
+        self.calls: list[tuple[Any, ...]] = []
         self.incidents: dict[int, dict[str, Any]] = {}
 
     def post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -18,13 +26,15 @@ class RecordingRestClient:
         self.incidents[1] = incident
         return incident
 
-    def patch(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
-        self.calls.append(("patch", path, deepcopy(payload)))
-        for key, value in payload.items():
+    def patch(self, path: str, payload: FakePatch, overwrite_conflict: bool = False) -> dict[str, Any]:
+        self.calls.append(("patch", path, deepcopy(payload.values), {"overwrite_conflict": overwrite_conflict}))
+        for key, value in payload.values.items():
             if "." in key:
                 set_dotted(self.incidents[1], key, value)
-            else:
+            elif key in {"name", "description", "status", "resolution"}:
                 self.incidents[1][key] = value
+            else:
+                set_dotted(self.incidents[1], f"properties.{key}", value)
         return self.incidents[1]
 
     def get(self, path: str) -> dict[str, Any]:
@@ -43,6 +53,7 @@ class RecordingRestClient:
 
 def test_real_client_uses_resilient_client_methods_and_builds_dotted_payloads(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("resilient_regression.client.time.time", lambda: 123.456)
+    monkeypatch.setattr("resilient_regression.client.ResilientPatch", FakePatch)
     rest_client = RecordingRestClient()
     client = RealSoarClient("https://soar.example.test", "201", resilient_client=rest_client)
 
@@ -60,9 +71,16 @@ def test_real_client_uses_resilient_client_methods_and_builds_dotted_payloads(mo
             "properties": {"test_field": "initial"},
         },
     )
-    assert rest_client.calls[1] == ("patch", "/incidents/1", {"properties.test_field": "updated"})
-    assert rest_client.calls[2] == ("get", "/incidents/1", None)
+    assert rest_client.calls[1] == ("get", "/incidents/1", None)
+    assert rest_client.calls[2] == ("patch", "/incidents/1", {"test_field": "updated"}, {"overwrite_conflict": True})
+    assert rest_client.calls[3] == ("get", "/incidents/1", None)
     assert updated["properties"] == {"test_field": "updated"}
+
+def test_patch_field_names_strip_incident_and_properties_prefixes():
+    assert normalize_patch_field_name("properties.test_field") == "test_field"
+    assert normalize_patch_field_name("incident.properties.test_field") == "test_field"
+    assert normalize_patch_field_name("name") == "name"
+
 
 def test_build_resilient_options_supports_api_key_credentials():
     opts = build_resilient_options(

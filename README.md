@@ -170,7 +170,7 @@ Cleanup stays scoped to incidents created during the current run. Scenario-provi
 | YAML action | Dry-run mode | Real mode |
 |---|---|---|
 | `create-inc` | Creates a mock incident and stores `${incident.*}` variables. | Creates a real incident. |
-| `update-inc` | Updates the current or targeted mock incident. | Updates the current or targeted real incident with PATCH-style payloads. |
+| `update-inc` | Updates the current or targeted mock incident. | Fetches the current incident, builds a `resilient.Patch`, and patches the targeted real incident. |
 | `close-incident` | Sets incident close/status fields. | Updates/ closes the real incident. |
 | `wait-before-run` | Parses duration but does not sleep. | Sleeps before the next action. |
 | `validate` | Reads mock incident state and applies assertions. | Fetches latest real incident state and applies assertions. |
@@ -178,6 +178,8 @@ Cleanup stays scoped to incidents created during the current run. Scenario-provi
 | `add-task` | Appends a mock task and stores `${task.*}` variables. | Not supported yet; fails clearly. |
 | `update-task` | Updates latest mock task or explicit task `id`. | Not supported yet; fails clearly. |
 | `run-script` | Records a mock script run with inputs/result. | Dry-run only; fails clearly. |
+
+For real `update-inc`, custom fields can be written as `properties.api_name` or `incident.properties.api_name` in YAML. The runner passes only `api_name` into `resilient.Patch.add_value(...)`, matching IBM SOAR's custom-field patch behavior.
 
 ### Pre-defined Variables
 
