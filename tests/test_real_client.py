@@ -93,6 +93,7 @@ def test_build_resilient_options_supports_api_key_credentials():
     assert opts == {
         "host": "https://soar.example.test",
         "org": "201",
+        "cafile": False,
         "api_key_id": "test-key",
         "api_key_secret": "secret-value",
     }
@@ -108,10 +109,23 @@ def test_build_resilient_options_supports_username_password_credentials():
     assert opts == {
         "host": "https://soar.example.test",
         "org": "201",
+        "cafile": False,
         "email": "user@example.test",
         "user_name": "user@example.test",
         "password": "secret-value",
     }
+
+def test_build_resilient_options_supports_cafile():
+    opts = build_resilient_options(
+        host="https://soar.example.test",
+        org="201",
+        api_key_id="test-key",
+        api_key_secret="secret-value",
+        cafile="/path/to/ca.pem",
+    )
+
+    assert opts["cafile"] == "/path/to/ca.pem"
+
 
 def test_build_resilient_options_does_not_include_secret_in_errors():
     with pytest.raises(SoarClientError) as exc_info:

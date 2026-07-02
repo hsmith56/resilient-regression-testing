@@ -265,6 +265,7 @@ class RealSoarClient(BaseSoarClient):
         api_key_secret: str | None = None,
         user_name: str | None = None,
         password: str | None = None,
+        cafile: str | bool = False,
         allow_delete: bool = False,
         resilient_client: Any | None = None,
     ) -> None:
@@ -279,6 +280,7 @@ class RealSoarClient(BaseSoarClient):
             api_key_secret=api_key_secret,
             user_name=user_name,
             password=password,
+            cafile=cafile,
         )
 
     def create_incident(self, fields: dict[str, Any]) -> dict[str, Any]:
@@ -352,6 +354,7 @@ def _build_resilient_client(
     api_key_secret: str | None = None,
     user_name: str | None = None,
     password: str | None = None,
+    cafile: str | bool = False,
 ) -> Any:
     try:
         from resilient_circuits.rest_helper import get_resilient_client
@@ -366,6 +369,7 @@ def _build_resilient_client(
             api_key_secret=api_key_secret,
             user_name=user_name,
             password=password,
+            cafile=cafile,
         )
         return get_resilient_client(opts)
     except SoarClientError:
@@ -382,6 +386,7 @@ def build_resilient_options(
     api_key_secret: str | None = None,
     user_name: str | None = None,
     password: str | None = None,
+    cafile: str | bool = False,
 ) -> dict[str, Any]:
     missing = [name for name, value in (("host", host), ("org", org)) if value in (None, "")]
     has_api_key_id = bool(api_key_id)
@@ -400,7 +405,7 @@ def build_resilient_options(
     if missing:
         raise SoarClientError(f"missing required real mode setting(s): {', '.join(missing)}")
 
-    opts: dict[str, Any] = {"host": host, "org": org}
+    opts: dict[str, Any] = {"host": host, "org": org, "cafile": cafile}
     if has_api_key_id:
         opts.update({"api_key_id": api_key_id, "api_key_secret": api_key_secret})
     else:

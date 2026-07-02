@@ -100,8 +100,37 @@ def test_real_mode_selects_real_client_with_api_key_credentials(monkeypatch):
         "api_key_secret": "secret",
         "user_name": None,
         "password": None,
+        "cafile": False,
     }
     assert FakeRunner.last_config.dry_run is False
+
+def test_real_mode_passes_cafile_when_provided(monkeypatch):
+    class FakeRealClient:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    monkeypatch.setattr(cli, "load_scenarios", lambda paths: [])
+    monkeypatch.setattr(cli, "ScenarioRunner", FakeRunner)
+    monkeypatch.setattr(cli, "RealSoarClient", FakeRealClient)
+
+    exit_code = cli.main([
+        "run",
+        "scenarios/example.yaml",
+        "--host",
+        "https://soar.example.test",
+        "--org",
+        "201",
+        "--api-key-id",
+        "id",
+        "--api-key-secret",
+        "secret",
+        "--cafile",
+        "/path/to/ca.pem",
+    ])
+
+    assert exit_code == 0
+    assert FakeRunner.last_client.kwargs["cafile"] == "/path/to/ca.pem"
+
 
 def test_real_mode_selects_real_client_with_username_password(monkeypatch):
     class FakeRealClient:
@@ -133,4 +162,5 @@ def test_real_mode_selects_real_client_with_username_password(monkeypatch):
         "api_key_secret": None,
         "user_name": "user@example.test",
         "password": "password",
+        "cafile": False,
     }

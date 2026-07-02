@@ -22,6 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--api-key-secret", help="IBM SOAR API key secret for real mode")
     run.add_argument("--user-name", help="IBM SOAR username for real mode")
     run.add_argument("--password", help="IBM SOAR password for real mode")
+    run.add_argument("--cafile", default=False, help="CA bundle path for TLS verification in real mode")
     run.add_argument("--no-cleanup", action="store_true", help="Do not cleanup incidents created during this run")
     run.add_argument("--report-json", help="Write JSON report to this path")
     run.add_argument("--verbose", action="store_true", help="Show step-level details")
@@ -73,6 +74,7 @@ def main(argv: list[str] | None = None) -> int:
                 api_key_secret=args.api_key_secret,
                 user_name=args.user_name,
                 password=args.password,
+                cafile=args.cafile,
             )
         except SoarClientError as exc:
             print(f"Client setup failed: {exc}", file=sys.stderr)

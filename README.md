@@ -121,6 +121,7 @@ Mode and option rules:
 | `--api-key-secret KEY_SECRET` | API key secret for real mode. Requires `--api-key-id`. |
 | `--user-name USER` | Username for real mode. Requires `--password`. |
 | `--password PASSWORD` | Password for real mode. Requires `--user-name`. |
+| `--cafile PATH` | CA bundle path for TLS verification in real mode. Defaults to `false` when omitted. |
 | `--no-cleanup` | Skip cleanup for incidents created during the run. |
 | `--report-json PATH` | Write structured run results to JSON. |
 | `--verbose` | Print step-level execution output. |
