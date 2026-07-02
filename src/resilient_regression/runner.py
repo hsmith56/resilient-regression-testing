@@ -68,7 +68,11 @@ class ScenarioRunner:
                     raise RuntimeError("validate requires prior create-inc")
                 incident = self.client.get_incident(incident_id)
                 expectations = _resolve_value(scenario.validations, variables)
-                result.validation_failures = validate_incident(incident, expectations)
+                result.validation_failures = validate_incident(
+                    incident,
+                    expectations,
+                    value_resolver=self.client.resolve_field_value,
+                )
                 if result.validation_failures:
                     result.passed = False
         except Exception as exc:  # continue other scenarios after failure

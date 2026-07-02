@@ -117,6 +117,9 @@ class BaseSoarClient:
     def get_incident(self, incident_id: int) -> dict[str, Any]:
         raise NotImplementedError
 
+    def resolve_field_value(self, path: str, value: Any) -> Any:
+        return value
+
     def close_incident(self, incident_id: int, fields: dict[str, Any] | None = None) -> dict[str, Any]:
         raise NotImplementedError
 
@@ -273,6 +276,7 @@ class RealSoarClient(BaseSoarClient):
         self.host = host
         self.org = org
         self.allow_delete = allow_delete
+        self._field_value_labels: dict[str, dict[Any, str]] | None = None
         self._client = resilient_client or _build_resilient_client(
             host=host,
             org=org,
@@ -298,6 +302,19 @@ class RealSoarClient(BaseSoarClient):
     def get_incident(self, incident_id: int) -> dict[str, Any]:
         return self._request("get", f"/incidents/{incident_id}")
 
+    def resolve_field_value(self, path: str, value: Any) -> Any:
+        field_name = normalize_patch_field_name(path)
+        labels = self._get_field_value_labels().get(field_name)
+        if not labels:
+            return value
+        if isinstance(value, list):
+            return [labels.get(item, labels.get(str(item), item)) for item in value]
+        if isinstance(value, tuple):
+            return tuple(labels.get(item, labels.get(str(item), item)) for item in value)
+        if isinstance(value, set):
+            return {labels.get(item, labels.get(str(item), item)) for item in value}
+        return labels.get(value, labels.get(str(value), value))
+
     def close_incident(self, incident_id: int, fields: dict[str, Any] | None = None) -> dict[str, Any]:
         payload = {"status": "Closed"}
         if fields:
@@ -308,6 +325,20 @@ class RealSoarClient(BaseSoarClient):
         if not self.allow_delete:
             raise UnsupportedRealActionError("delete incident is disabled")
         self._request("put", "/incidents/delete", [incident_id])
+
+    def _get_field_value_labels(self) -> dict[str, dict[Any, str]]:
+        if self._field_value_labels is None:
+            self._field_value_labels = {}
+            try:
+                fields = self._request("get", "/types/incident/fields")
+            except SoarClientError:
+                return self._field_value_labels
+            for field in _iter_field_definitions(fields):
+                field_name = _field_api_name(field)
+                value_labels = _field_value_labels(field)
+                if field_name and value_labels:
+                    self._field_value_labels[field_name] = value_labels
+        return self._field_value_labels
 
     def cleanup_created_incidents(self) -> list[int]:
         ids = list(self.created_incident_ids)
@@ -334,6 +365,68 @@ class RealSoarClient(BaseSoarClient):
         except Exception as exc:
             raise SoarClientError(f"SOAR API {method.upper()} {path} failed") from exc
         return result or {}
+
+def _iter_field_definitions(fields: Any) -> list[dict[str, Any]]:
+    if isinstance(fields, list):
+        return [field for field in fields if isinstance(field, dict)]
+    if isinstance(fields, dict):
+        for key in ("fields", "entities"):
+            value = fields.get(key)
+            if isinstance(value, list):
+                return [field for field in value if isinstance(field, dict)]
+        return [field for field in fields.values() if isinstance(field, dict)]
+    return []
+
+
+def _field_api_name(field: dict[str, Any]) -> str | None:
+    for key in ("name", "api_name", "apiName", "property_name"):
+        value = field.get(key)
+        if isinstance(value, str) and value:
+            return normalize_patch_field_name(value)
+    return None
+
+
+def _field_value_labels(field: dict[str, Any]) -> dict[Any, str]:
+    labels: dict[Any, str] = {}
+    for option in _iter_field_options(field):
+        value = _option_value(option)
+        label = _option_label(option)
+        if value is not _MISSING and label is not None:
+            labels[value] = label
+            labels[str(value)] = label
+    return labels
+
+
+def _iter_field_options(field: dict[str, Any]) -> list[dict[str, Any]]:
+    for key in ("values", "options", "select_values"):
+        value = field.get(key)
+        if isinstance(value, list):
+            return [option for option in value if isinstance(option, dict)]
+        if isinstance(value, dict):
+            return [_option_from_mapping(item_key, item_value) for item_key, item_value in value.items()]
+    return []
+
+
+def _option_from_mapping(key: Any, value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return {"value": key, **value}
+    return {"value": key, "label": value}
+
+
+def _option_value(option: dict[str, Any]) -> Any:
+    for key in ("value", "id", "uuid", "key"):
+        if key in option:
+            return option[key]
+    return _MISSING
+
+
+def _option_label(option: dict[str, Any]) -> str | None:
+    for key in ("label", "display_name", "displayName", "name", "text"):
+        value = option.get(key)
+        if isinstance(value, str):
+            return value
+    return None
+
 
 def _accepts_keyword(func: Any, keyword: str) -> bool:
     try:

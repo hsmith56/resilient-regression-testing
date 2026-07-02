@@ -19,6 +19,7 @@ class RecordingRestClient:
     def __init__(self) -> None:
         self.calls: list[tuple[Any, ...]] = []
         self.incidents: dict[int, dict[str, Any]] = {}
+        self.field_defs: dict[str, Any] = {"fields": []}
 
     def post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         self.calls.append(("post", path, deepcopy(payload)))
@@ -39,6 +40,8 @@ class RecordingRestClient:
 
     def get(self, path: str) -> dict[str, Any]:
         self.calls.append(("get", path, None))
+        if path == "/types/incident/fields":
+            return self.field_defs
         return self.incidents[1]
 
     def delete(self, path: str) -> dict[str, Any]:
@@ -80,6 +83,26 @@ def test_patch_field_names_strip_incident_and_properties_prefixes():
     assert normalize_patch_field_name("properties.test_field") == "test_field"
     assert normalize_patch_field_name("incident.properties.test_field") == "test_field"
     assert normalize_patch_field_name("name") == "name"
+
+
+def test_real_client_resolves_dropdown_ids_from_field_metadata():
+    rest_client = RecordingRestClient()
+    rest_client.field_defs = {
+        "fields": [
+            {
+                "name": "severity",
+                "values": [
+                    {"value": 123, "label": "High"},
+                    {"value": 124, "label": "Medium"},
+                ],
+            }
+        ]
+    }
+    client = RealSoarClient("https://soar.example.test", "201", resilient_client=rest_client)
+
+    assert client.resolve_field_value("properties.severity", 123) == "High"
+    assert client.resolve_field_value("incident.properties.severity", [123, 124]) == ["High", "Medium"]
+    assert rest_client.calls.count(("get", "/types/incident/fields", None)) == 1
 
 
 def test_build_resilient_options_supports_api_key_credentials():

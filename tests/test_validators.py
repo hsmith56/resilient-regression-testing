@@ -49,3 +49,35 @@ def test_failed_validation_reports_expected_actual_and_path():
     assert failures[0].path == "properties.field_1"
     assert failures[0].expected == "other"
     assert failures[0].actual == "value"
+
+
+def test_value_resolver_compares_dropdown_id_to_label():
+    incident = {"properties": {"severity": 123, "tags": [123, 124]}}
+
+    def resolver(path, value):
+        labels = {123: "High", 124: "Medium"}
+        if isinstance(value, list):
+            return [labels.get(item, item) for item in value]
+        return labels.get(value, value)
+
+    failures = validate_incident(
+        incident,
+        {
+            "properties.severity": {"equals": "High"},
+            "properties.tags": {"contains": "Medium"},
+        },
+        value_resolver=resolver,
+    )
+
+    assert failures == []
+
+
+def test_value_resolver_reports_mapped_actual_on_failure():
+    failures = validate_incident(
+        {"properties": {"severity": 124}},
+        {"properties.severity": {"equals": "High"}},
+        value_resolver=lambda path, value: "Medium",
+    )
+
+    assert len(failures) == 1
+    assert failures[0].actual == "Medium"

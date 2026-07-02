@@ -219,6 +219,13 @@ Supported comparison functions:
 | `not_null` | Path exists and value is not `null`. | `properties.owner: { not_null: true }` |
 | `is_null` | Path is missing or value is `null`. | `properties.optional: { is_null: true }` |
 
+In real mode, dropdown fields can be validated by UI label. If SOAR returns a stored option id, validation resolves the id from incident field metadata before comparing:
+
+```yaml
+validate:
+  properties.severity: High
+```
+
 Example validation block using each comparison:
 
 ```yaml
