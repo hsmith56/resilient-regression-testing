@@ -16,11 +16,36 @@ def build_parser() -> argparse.ArgumentParser:
     run = subparsers.add_parser("run", help="Run YAML regression scenarios")
     run.add_argument("scenario_files", nargs="+", help="YAML scenario file(s)")
     run.add_argument("--dry-run", action="store_true", help="Use mocked local SOAR client")
-    run.add_argument("--config", help="Path to IBM SOAR / Resilient app.config for real mode")
+    run.add_argument("--host", help="IBM SOAR / Resilient host URL for real mode")
+    run.add_argument("--org", help="IBM SOAR / Resilient organization id for real mode")
+    run.add_argument("--api-key-id", help="IBM SOAR API key id for real mode")
+    run.add_argument("--api-key-secret", help="IBM SOAR API key secret for real mode")
+    run.add_argument("--user-name", help="IBM SOAR username for real mode")
+    run.add_argument("--password", help="IBM SOAR password for real mode")
     run.add_argument("--no-cleanup", action="store_true", help="Do not cleanup incidents created during this run")
     run.add_argument("--report-json", help="Write JSON report to this path")
     run.add_argument("--verbose", action="store_true", help="Show step-level details")
     return parser
+
+
+def _validate_real_mode_args(args: argparse.Namespace) -> str | None:
+    missing = [name for name in ("host", "org") if not getattr(args, name)]
+    has_api_key_id = bool(args.api_key_id)
+    has_api_key_secret = bool(args.api_key_secret)
+    has_user_name = bool(args.user_name)
+    has_password = bool(args.password)
+
+    if has_api_key_id != has_api_key_secret:
+        missing.append("api-key-secret" if has_api_key_id else "api-key-id")
+    if has_user_name != has_password:
+        missing.append("password" if has_user_name else "user-name")
+    if has_api_key_id and has_user_name:
+        return "real mode requires either API key credentials or username/password credentials, not both"
+    if not (has_api_key_id or has_user_name):
+        missing.append("api-key-id/api-key-secret or user-name/password")
+    if missing:
+        return "real mode missing required option(s): " + ", ".join(f"--{name}" for name in missing)
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -28,9 +53,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "run":
-        if not args.dry_run and not args.config:
-            print("real mode requires --config app.config; use --dry-run for the mock client", file=sys.stderr)
-            return 2
+        if not args.dry_run:
+            setup_error = _validate_real_mode_args(args)
+            if setup_error:
+                print(setup_error, file=sys.stderr)
+                return 2
 
         try:
             scenarios = load_scenarios(args.scenario_files)
@@ -39,7 +66,14 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
         try:
-            client = MockSoarClient() if args.dry_run else RealSoarClient(args.config)
+            client = MockSoarClient() if args.dry_run else RealSoarClient(
+                host=args.host,
+                org=args.org,
+                api_key_id=args.api_key_id,
+                api_key_secret=args.api_key_secret,
+                user_name=args.user_name,
+                password=args.password,
+            )
         except SoarClientError as exc:
             print(f"Client setup failed: {exc}", file=sys.stderr)
             return 2

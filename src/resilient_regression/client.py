@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import configparser
 import inspect
 import time
 from copy import deepcopy
-from pathlib import Path
 from typing import Any
 
 
@@ -243,13 +241,32 @@ class MockSoarClient(BaseSoarClient):
 
 
 class RealSoarClient(BaseSoarClient):
-    """IBM SOAR client backed by resilient-circuits app.config loading."""
+    """IBM SOAR client backed by direct resilient-circuits credentials."""
 
-    def __init__(self, config_path: str | Path, allow_delete: bool = False, resilient_client: Any | None = None) -> None:
+    def __init__(
+        self,
+        host: str,
+        org: str | int,
+        *,
+        api_key_id: str | None = None,
+        api_key_secret: str | None = None,
+        user_name: str | None = None,
+        password: str | None = None,
+        allow_delete: bool = False,
+        resilient_client: Any | None = None,
+    ) -> None:
         super().__init__()
-        self.config_path = Path(config_path)
+        self.host = host
+        self.org = org
         self.allow_delete = allow_delete
-        self._client = resilient_client or _build_resilient_client(self.config_path)
+        self._client = resilient_client or _build_resilient_client(
+            host=host,
+            org=org,
+            api_key_id=api_key_id,
+            api_key_secret=api_key_secret,
+            user_name=user_name,
+            password=password,
+        )
 
     def create_incident(self, fields: dict[str, Any]) -> dict[str, Any]:
         incident = self._request("post", "/incidents", build_create_incident_payload(fields), timeout=50)
@@ -309,45 +326,65 @@ def _accepts_keyword(func: Any, keyword: str) -> bool:
     )
 
 
-def _build_resilient_client(config_path: Path) -> Any:
+def _build_resilient_client(
+    *,
+    host: str,
+    org: str | int,
+    api_key_id: str | None = None,
+    api_key_secret: str | None = None,
+    user_name: str | None = None,
+    password: str | None = None,
+) -> Any:
     try:
-        from resilient_circuits import helpers
         from resilient_circuits.rest_helper import get_resilient_client
     except ImportError as exc:
         raise SoarClientError("real mode requires resilient-circuits; run `uv sync` to install dependencies") from exc
 
     try:
-        _prevalidate_app_config(config_path)
-        opts = helpers.get_configs(path_config_file=str(config_path))
-        _validate_resilient_options(opts)
+        opts = build_resilient_options(
+            host=host,
+            org=org,
+            api_key_id=api_key_id,
+            api_key_secret=api_key_secret,
+            user_name=user_name,
+            password=password,
+        )
         return get_resilient_client(opts)
     except SoarClientError:
         raise
     except Exception as exc:
-        raise SoarClientError(f"Unable to create resilient client from app.config at {config_path}") from exc
+        raise SoarClientError("Unable to create resilient client from provided credentials") from exc
 
 
-def _prevalidate_app_config(path: Path) -> None:
-    parser = configparser.ConfigParser()
-    if not parser.read(path):
-        raise SoarClientError(f"Unable to read app.config at {path}")
-    if "resilient" not in parser:
-        raise SoarClientError("app.config missing [resilient] section")
-    section = parser["resilient"]
-    required = ["host", "org"]
-    missing = [key for key in required if not section.get(key)]
-    has_api_key = bool(section.get("api_key_id") and section.get("api_key_secret"))
-    has_password = bool(section.get("email") and section.get("password"))
-    if missing or not (has_api_key or has_password):
-        missing_text = ", ".join(missing + ([] if has_api_key or has_password else ["api_key_id/api_key_secret or email/password"]))
-        raise SoarClientError(f"app.config missing required resilient setting(s): {missing_text}")
+def build_resilient_options(
+    *,
+    host: str | None,
+    org: str | int | None,
+    api_key_id: str | None = None,
+    api_key_secret: str | None = None,
+    user_name: str | None = None,
+    password: str | None = None,
+) -> dict[str, Any]:
+    missing = [name for name, value in (("host", host), ("org", org)) if value in (None, "")]
+    has_api_key_id = bool(api_key_id)
+    has_api_key_secret = bool(api_key_secret)
+    has_user_name = bool(user_name)
+    has_password = bool(password)
 
+    if has_api_key_id != has_api_key_secret:
+        missing.append("api_key_secret" if has_api_key_id else "api_key_id")
+    if has_user_name != has_password:
+        missing.append("password" if has_user_name else "user_name")
+    if has_api_key_id and has_user_name:
+        raise SoarClientError("provide either API key credentials or username/password credentials, not both")
+    if not (has_api_key_id or has_user_name):
+        missing.append("api_key_id/api_key_secret or user_name/password")
+    if missing:
+        raise SoarClientError(f"missing required real mode setting(s): {', '.join(missing)}")
 
-def _validate_resilient_options(opts: dict[str, Any]) -> None:
-    required = ["host", "org"]
-    missing = [key for key in required if not opts.get(key)]
-    has_api_key = bool(opts.get("api_key_id") and opts.get("api_key_secret"))
-    has_password = bool(opts.get("email") and opts.get("password"))
-    if missing or not (has_api_key or has_password):
-        missing_text = ", ".join(missing + ([] if has_api_key or has_password else ["api_key_id/api_key_secret or email/password"]))
-        raise SoarClientError(f"app.config missing required resilient setting(s): {missing_text}")
+    opts: dict[str, Any] = {"host": host, "org": org}
+    if has_api_key_id:
+        opts.update({"api_key_id": api_key_id, "api_key_secret": api_key_secret})
+    else:
+        opts.update({"email": user_name, "user_name": user_name, "password": password})
+    return opts

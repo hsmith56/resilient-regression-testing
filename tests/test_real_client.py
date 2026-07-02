@@ -1,27 +1,11 @@
 from copy import deepcopy
-from pathlib import Path
 from typing import Any
 
 import pytest
 
-from resilient_regression.client import BaseSoarClient, RealSoarClient, set_dotted
+from resilient_regression.client import BaseSoarClient, RealSoarClient, SoarClientError, build_resilient_options, set_dotted
 from resilient_regression.models import Scenario, ScenarioStep
 from resilient_regression.runner import RunnerConfig, ScenarioRunner
-
-
-def write_app_config(path: Path, secret: str = "secret-value") -> Path:
-    path.write_text(
-        f"""
-[resilient]
-host=https://soar.example.test
-org=201
-api_key_id=test-key
-api_key_secret={secret}
-""".strip(),
-        encoding="utf-8",
-    )
-    return path
-
 
 class RecordingRestClient:
     def __init__(self) -> None:
@@ -57,11 +41,10 @@ class RecordingRestClient:
             self.incidents.pop(incident_id, None)
         return {}
 
-
-def test_real_client_uses_resilient_client_methods_and_builds_dotted_payloads(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_real_client_uses_resilient_client_methods_and_builds_dotted_payloads(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("resilient_regression.client.time.time", lambda: 123.456)
     rest_client = RecordingRestClient()
-    client = RealSoarClient(write_app_config(tmp_path / "app.config"), resilient_client=rest_client)
+    client = RealSoarClient("https://soar.example.test", "201", resilient_client=rest_client)
 
     incident = client.create_incident({"name": "Regression", "description": "Created by test", "test_field": "initial"})
     updated = client.update_incident(incident["id"], {"properties.test_field": "updated"})
@@ -81,17 +64,43 @@ def test_real_client_uses_resilient_client_methods_and_builds_dotted_payloads(tm
     assert rest_client.calls[2] == ("get", "/incidents/1", None)
     assert updated["properties"] == {"test_field": "updated"}
 
+def test_build_resilient_options_supports_api_key_credentials():
+    opts = build_resilient_options(
+        host="https://soar.example.test",
+        org="201",
+        api_key_id="test-key",
+        api_key_secret="secret-value",
+    )
 
-def test_real_client_does_not_include_secret_in_config_errors(tmp_path: Path):
-    config = write_app_config(tmp_path / "app.config", secret="super-secret-token")
-    text = config.read_text(encoding="utf-8").replace("host=https://soar.example.test\n", "")
-    config.write_text(text, encoding="utf-8")
+    assert opts == {
+        "host": "https://soar.example.test",
+        "org": "201",
+        "api_key_id": "test-key",
+        "api_key_secret": "secret-value",
+    }
 
-    with pytest.raises(Exception) as exc_info:
-        RealSoarClient(config)
+def test_build_resilient_options_supports_username_password_credentials():
+    opts = build_resilient_options(
+        host="https://soar.example.test",
+        org="201",
+        user_name="user@example.test",
+        password="secret-value",
+    )
+
+    assert opts == {
+        "host": "https://soar.example.test",
+        "org": "201",
+        "email": "user@example.test",
+        "user_name": "user@example.test",
+        "password": "secret-value",
+    }
+
+def test_build_resilient_options_does_not_include_secret_in_errors():
+    with pytest.raises(SoarClientError) as exc_info:
+        build_resilient_options(host="https://soar.example.test", org="201", api_key_secret="super-secret-token")
 
     assert "super-secret-token" not in str(exc_info.value)
-
+    assert "api_key_id" in str(exc_info.value)
 
 class CleanupRecordingClient(BaseSoarClient):
     def __init__(self) -> None:
@@ -119,7 +128,6 @@ class CleanupRecordingClient(BaseSoarClient):
         self.incidents[incident_id].update(fields or {"status": "Closed"})
         return self.incidents[incident_id]
 
-
 def test_cleanup_runs_after_real_mode_failure_and_closes_created_incident():
     client = CleanupRecordingClient()
     scenario = Scenario(
@@ -138,10 +146,9 @@ def test_cleanup_runs_after_real_mode_failure_and_closes_created_incident():
     assert report.cleanup_ran is True
     assert client.closed_ids == [1]
 
-
-def test_real_cleanup_uses_bulk_delete_endpoint(tmp_path: Path):
+def test_real_cleanup_uses_bulk_delete_endpoint():
     rest_client = RecordingRestClient()
-    client = RealSoarClient(write_app_config(tmp_path / "app.config"), resilient_client=rest_client)
+    client = RealSoarClient("https://soar.example.test", "201", resilient_client=rest_client)
     scenario = Scenario(
         id="real-cleanup-uses-delete-endpoint",
         steps=[
@@ -156,7 +163,6 @@ def test_real_cleanup_uses_bulk_delete_endpoint(tmp_path: Path):
     assert report.passed is False
     assert report.cleanup_deleted_ids == [1]
     assert ("put", "/incidents/delete", [1]) in rest_client.calls
-
 
 def test_user_provided_incident_id_is_not_auto_cleaned():
     client = CleanupRecordingClient()
@@ -175,10 +181,9 @@ def test_user_provided_incident_id_is_not_auto_cleaned():
     assert client.closed_ids == []
     assert report.cleanup_deleted_ids == []
 
-
-def test_unsupported_real_mode_action_fails_clearly(tmp_path: Path):
+def test_unsupported_real_mode_action_fails_clearly():
     rest_client = RecordingRestClient()
-    client = RealSoarClient(write_app_config(tmp_path / "app.config"), resilient_client=rest_client)
+    client = RealSoarClient("https://soar.example.test", "201", resilient_client=rest_client)
     incident = client.create_incident({"name": "Existing"})
     scenario = Scenario(
         id="unsupported-real-action",
