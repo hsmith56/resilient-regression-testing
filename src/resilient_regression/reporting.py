@@ -22,11 +22,12 @@ def print_report(report: RunReport, verbose: bool = False) -> None:
         console.print(source)
         table = Table()
         table.add_column("Scenario", overflow="fold")
+        table.add_column("Incident", no_wrap=True)
         table.add_column("Status", no_wrap=True)
         table.add_column("Details", overflow="fold")
 
         for result in results:
-            table.add_row(result.id, _status(result), _details(result))
+            table.add_row(result.id, _incident(result), _status(result), _details(result))
         console.print(table)
 
         if verbose:
@@ -49,6 +50,10 @@ def print_report(report: RunReport, verbose: bool = False) -> None:
         console.print(f"Cleanup processed created incidents: {report.cleanup_deleted_ids}")
     else:
         console.print("Cleanup skipped (--no-cleanup)")
+
+
+def _incident(result: ScenarioResult) -> str:
+    return str(result.incident_id) if result.incident_id is not None else "-"
 
 
 def _status(result: ScenarioResult) -> str:
