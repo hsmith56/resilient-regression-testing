@@ -355,7 +355,7 @@ class RealSoarClient(BaseSoarClient):
         payload = deepcopy(task)
         payload["status"] = "C"
         response = self._request("put", f"/tasks/{int(payload['id'])}", payload)
-        return response if response else payload
+        return response if isinstance(response, dict) and "id" in response else payload
 
     def delete_incident(self, incident_id: int) -> None:
         if not self.allow_delete:
