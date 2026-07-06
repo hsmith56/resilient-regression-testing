@@ -98,10 +98,10 @@ Run against a real IBM SOAR / Resilient instance with API key credentials:
 uv run resilient-regression run scenarios --host https://soar.example.test --org 201 --api-key-id KEY_ID --api-key-secret KEY_SECRET
 ```
 
-Run against a real IBM SOAR / Resilient instance with username/password credentials:
+Run against a real IBM SOAR / Resilient instance with email/password credentials:
 
 ```sh
-uv run resilient-regression run scenarios --host https://soar.example.test --org 201 --user-name user@example.test --password PASSWORD
+uv run resilient-regression run scenarios --host https://soar.example.test --org 201 --email user@example.test --password PASSWORD
 ```
 
 Write a JSON report:
@@ -119,14 +119,14 @@ Mode and option rules:
 | `--org ORG` | IBM SOAR / Resilient organization id for real mode. |
 | `--api-key-id KEY_ID` | API key id for real mode. Requires `--api-key-secret`. |
 | `--api-key-secret KEY_SECRET` | API key secret for real mode. Requires `--api-key-id`. |
-| `--user-name USER` | Username for real mode. Requires `--password`. |
-| `--password PASSWORD` | Password for real mode. Requires `--user-name`. |
+| `--email EMAIL` | Email for real mode. Requires `--password`. |
+| `--password PASSWORD` | Password for real mode. Requires `--email`. |
 | `--cafile PATH` | CA bundle path for TLS verification in real mode. Defaults to `false` when omitted. |
 | `--no-cleanup` | Skip cleanup for incidents created during the run. |
 | `--report-json PATH` | Write structured run results to JSON. |
 | `--verbose` | Print step-level execution output. |
 
-Real mode creates the API client with `resilient_circuits.rest_helper.get_resilient_client(opts)`. Provide either `--api-key-id`/`--api-key-secret` or `--user-name`/`--password`; partial or mixed credential sets fail before scenarios run. Secrets are not printed in setup errors or reports.
+Real mode creates the API client with `resilient_circuits.rest_helper.get_resilient_client(opts)`. Provide either `--api-key-id`/`--api-key-secret` or `--email`/`--password`; partial or mixed credential sets fail before scenarios run. Secrets are not printed in setup errors or reports.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

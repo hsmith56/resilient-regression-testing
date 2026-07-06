@@ -29,7 +29,20 @@ class RecordingRestClient:
         self.incidents[1] = incident
         return incident
 
-    def patch(self, path: str, payload: FakePatch, overwrite_conflict: bool = False) -> dict[str, Any]:
+    def patch(self, path: str, payload: Any, overwrite_conflict: bool = False) -> dict[str, Any]:
+        if isinstance(payload, dict):
+            self.calls.append(("patch", path, deepcopy(payload), {"overwrite_conflict": overwrite_conflict}))
+            for change in payload["changes"]:
+                key = change["field"]
+                value = change["new_value"]
+                if "object" in value:
+                    value = value["object"]
+                if key in {"name", "description", "status", "resolution"}:
+                    self.incidents[1][key] = value
+                else:
+                    set_dotted(self.incidents[1], f"properties.{key}", value)
+            return self.incidents[1]
+
         self.calls.append(("patch", path, deepcopy(payload.values), {"overwrite_conflict": overwrite_conflict}))
         for key, value in payload.values.items():
             if "." in key:
@@ -83,8 +96,9 @@ def test_real_client_uses_resilient_client_methods_and_builds_dotted_payloads(mo
         },
     )
     assert rest_client.calls[1] == ("get", "/incidents/1", None)
-    assert rest_client.calls[2] == ("patch", "/incidents/1", {"test_field": "updated"}, {"overwrite_conflict": True})
-    assert rest_client.calls[3] == ("get", "/incidents/1", None)
+    assert rest_client.calls[2] == ("get", "/types/incident/fields", None)
+    assert rest_client.calls[3] == ("patch", "/incidents/1", {"test_field": "updated"}, {"overwrite_conflict": True})
+    assert rest_client.calls[4] == ("get", "/incidents/1", None)
     assert updated["properties"] == {"test_field": "updated"}
 
 def test_patch_field_names_strip_incident_and_properties_prefixes():
@@ -138,6 +152,38 @@ def test_real_client_resolves_dropdown_ids_from_field_metadata():
     assert rest_client.calls.count(("get", "/types/incident/fields", None)) == 1
 
 
+def test_real_client_updates_multiselect_with_ids_patch_payload():
+    rest_client = RecordingRestClient()
+    rest_client.incidents[1] = {"id": 1, "status": "Active", "properties": {"abc_multiselect": {"ids": []}}}
+    rest_client.field_defs = {
+        "fields": [
+            {
+                "name": "abc_multiselect",
+                "input_type": "multiselect",
+                "values": [{"value": 123, "label": "Test val"}],
+            }
+        ]
+    }
+    client = RealSoarClient("https://soar.example.test", "201", resilient_client=rest_client)
+
+    client.update_incident(1, {"properties.abc_multiselect": "Test val"})
+
+    assert rest_client.calls[2] == (
+        "patch",
+        "/incidents/1",
+        {
+            "changes": [
+                {
+                    "field": "abc_multiselect",
+                    "old_value": {"ids": []},
+                    "new_value": {"ids": [123]},
+                }
+            ]
+        },
+        {"overwrite_conflict": True},
+    )
+
+
 def test_real_client_resolves_multiselect_property_values_from_field_metadata():
     rest_client = RecordingRestClient()
     rest_client.field_defs = {
@@ -173,11 +219,11 @@ def test_build_resilient_options_supports_api_key_credentials():
         "api_key_secret": "secret-value",
     }
 
-def test_build_resilient_options_supports_username_password_credentials():
+def test_build_resilient_options_supports_email_password_credentials():
     opts = build_resilient_options(
         host="https://soar.example.test",
         org="201",
-        user_name="user@example.test",
+        email="user@example.test",
         password="secret-value",
     )
 
@@ -186,7 +232,6 @@ def test_build_resilient_options_supports_username_password_credentials():
         "org": "201",
         "cafile": False,
         "email": "user@example.test",
-        "user_name": "user@example.test",
         "password": "secret-value",
     }
 

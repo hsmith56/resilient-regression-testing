@@ -20,7 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--org", help="IBM SOAR / Resilient organization id for real mode")
     run.add_argument("--api-key-id", help="IBM SOAR API key id for real mode")
     run.add_argument("--api-key-secret", help="IBM SOAR API key secret for real mode")
-    run.add_argument("--user-name", help="IBM SOAR username for real mode")
+    run.add_argument("--email", help="IBM SOAR email for real mode")
     run.add_argument("--password", help="IBM SOAR password for real mode")
     run.add_argument("--cafile", default=False, help="CA bundle path for TLS verification in real mode")
     run.add_argument("--no-cleanup", action="store_true", help="Do not cleanup incidents created during this run")
@@ -33,17 +33,17 @@ def _validate_real_mode_args(args: argparse.Namespace) -> str | None:
     missing = [name for name in ("host", "org") if not getattr(args, name)]
     has_api_key_id = bool(args.api_key_id)
     has_api_key_secret = bool(args.api_key_secret)
-    has_user_name = bool(args.user_name)
+    has_email = bool(args.email)
     has_password = bool(args.password)
 
     if has_api_key_id != has_api_key_secret:
         missing.append("api-key-secret" if has_api_key_id else "api-key-id")
-    if has_user_name != has_password:
-        missing.append("password" if has_user_name else "user-name")
-    if has_api_key_id and has_user_name:
-        return "real mode requires either API key credentials or username/password credentials, not both"
-    if not (has_api_key_id or has_user_name):
-        missing.append("api-key-id/api-key-secret or user-name/password")
+    if has_email != has_password:
+        missing.append("password" if has_email else "email")
+    if has_api_key_id and has_email:
+        return "real mode requires either API key credentials or email/password credentials, not both"
+    if not (has_api_key_id or has_email):
+        missing.append("api-key-id/api-key-secret or email/password")
     if missing:
         return "real mode missing required option(s): " + ", ".join(f"--{name}" for name in missing)
     return None
@@ -72,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
                 org=args.org,
                 api_key_id=args.api_key_id,
                 api_key_secret=args.api_key_secret,
-                user_name=args.user_name,
+                email=args.email,
                 password=args.password,
                 cafile=args.cafile,
             )

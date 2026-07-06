@@ -287,7 +287,7 @@ class RealSoarClient(BaseSoarClient):
         *,
         api_key_id: str | None = None,
         api_key_secret: str | None = None,
-        user_name: str | None = None,
+        email: str | None = None,
         password: str | None = None,
         cafile: str | bool = False,
         allow_delete: bool = False,
@@ -298,12 +298,14 @@ class RealSoarClient(BaseSoarClient):
         self.org = org
         self.allow_delete = allow_delete
         self._field_value_labels: dict[str, dict[Any, str]] | None = None
+        self._field_value_ids: dict[str, dict[Any, Any]] | None = None
+        self._multiselect_fields: set[str] | None = None
         self._client = resilient_client or _build_resilient_client(
             host=host,
             org=org,
             api_key_id=api_key_id,
             api_key_secret=api_key_secret,
-            user_name=user_name,
+            email=email,
             password=password,
             cafile=cafile,
         )
@@ -316,7 +318,7 @@ class RealSoarClient(BaseSoarClient):
     def update_incident(self, incident_id: int, fields: dict[str, Any]) -> dict[str, Any]:
         uri = f"/incidents/{incident_id}"
         incident = self.get_incident(incident_id)
-        patch = build_resilient_patch(incident, fields)
+        patch = self._build_update_patch(incident, fields)
         self._request("patch", uri, patch, overwrite_conflict=True)
         return self.get_incident(incident_id)
 
@@ -356,19 +358,70 @@ class RealSoarClient(BaseSoarClient):
             raise UnsupportedRealActionError("delete incident is disabled")
         self._request("put", "/incidents/delete", [incident_id])
 
+    def _build_update_patch(self, incident: dict[str, Any], fields: dict[str, Any]) -> Any:
+        multiselect_fields = self._get_multiselect_fields()
+        if not any(normalize_patch_field_name(field_name) in multiselect_fields for field_name in fields):
+            return build_resilient_patch(incident, fields)
+
+        changes: list[dict[str, Any]] = []
+        field_value_ids = self._get_field_value_ids()
+        for field_name, value in fields.items():
+            normalized = normalize_patch_field_name(field_name)
+            if normalized in multiselect_fields:
+                changes.append(
+                    {
+                        "field": normalized,
+                        "old_value": _current_multiselect_patch_value(incident, normalized),
+                        "new_value": {"ids": _multiselect_ids_for_value(value, field_value_ids.get(normalized, {}))},
+                    }
+                )
+            else:
+                changes.append(
+                    {
+                        "field": normalized,
+                        "old_value": {"object": get_dotted(incident, normalized, default=None)},
+                        "new_value": {"object": value},
+                    }
+                )
+        patch: dict[str, Any] = {"changes": changes}
+        if incident.get("vers"):
+            patch["version"] = incident["vers"]
+        return patch
+
     def _get_field_value_labels(self) -> dict[str, dict[Any, str]]:
-        if self._field_value_labels is None:
-            self._field_value_labels = {}
-            try:
-                fields = self._request("get", "/types/incident/fields")
-            except SoarClientError:
-                return self._field_value_labels
-            for field in _iter_field_definitions(fields):
-                field_name = _field_api_name(field)
-                value_labels = _field_value_labels(field)
-                if field_name and value_labels:
-                    self._field_value_labels[field_name] = value_labels
-        return self._field_value_labels
+        self._ensure_field_metadata()
+        return self._field_value_labels or {}
+
+    def _get_field_value_ids(self) -> dict[str, dict[Any, Any]]:
+        self._ensure_field_metadata()
+        return self._field_value_ids or {}
+
+    def _get_multiselect_fields(self) -> set[str]:
+        self._ensure_field_metadata()
+        return self._multiselect_fields or set()
+
+    def _ensure_field_metadata(self) -> None:
+        if self._field_value_labels is not None:
+            return
+        self._field_value_labels = {}
+        self._field_value_ids = {}
+        self._multiselect_fields = set()
+        try:
+            fields = self._request("get", "/types/incident/fields")
+        except SoarClientError:
+            return
+        for field in _iter_field_definitions(fields):
+            field_name = _field_api_name(field)
+            if not field_name:
+                continue
+            value_labels = _field_value_labels(field)
+            value_ids = _field_value_ids(field)
+            if value_labels:
+                self._field_value_labels[field_name] = value_labels
+            if value_ids:
+                self._field_value_ids[field_name] = value_ids
+            if _field_is_multiselect(field):
+                self._multiselect_fields.add(field_name)
 
     def cleanup_created_incidents(self) -> list[int]:
         ids = list(self.created_incident_ids)
@@ -448,6 +501,27 @@ def _field_value_labels(field: dict[str, Any]) -> dict[Any, str]:
     return labels
 
 
+def _field_value_ids(field: dict[str, Any]) -> dict[Any, Any]:
+    ids: dict[Any, Any] = {}
+    for option in _iter_field_options(field):
+        value = _option_value(option)
+        label = _option_label(option)
+        if value is not _MISSING and label is not None:
+            ids[label] = value
+            ids[str(label)] = value
+    return ids
+
+
+def _field_is_multiselect(field: dict[str, Any]) -> bool:
+    if "multi_select_values" in field or "multiselect_values" in field:
+        return True
+    for key in ("input_type", "inputType", "type", "field_type", "fieldType"):
+        value = field.get(key)
+        if isinstance(value, str) and "multi" in value.lower() and "select" in value.lower():
+            return True
+    return False
+
+
 def _iter_field_options(field: dict[str, Any]) -> list[dict[str, Any]]:
     for key in ("values", "options", "select_values", "multi_select_values", "multiselect_values"):
         value = field.get(key)
@@ -456,6 +530,38 @@ def _iter_field_options(field: dict[str, Any]) -> list[dict[str, Any]]:
         if isinstance(value, dict):
             return [_option_from_mapping(item_key, item_value) for item_key, item_value in value.items()]
     return []
+
+
+def _current_multiselect_patch_value(incident: dict[str, Any], field_name: str) -> dict[str, list[Any]]:
+    current = get_dotted(incident, f"properties.{field_name}", default=get_dotted(incident, field_name, default=None))
+    if isinstance(current, dict) and isinstance(current.get("ids"), list):
+        return {"ids": list(current["ids"])}
+    if isinstance(current, list):
+        return {"ids": list(current)}
+    if current in (None, ""):
+        return {"ids": []}
+    return {"ids": [current]}
+
+
+def _multiselect_ids_for_value(value: Any, ids_by_label: dict[Any, Any]) -> list[Any]:
+    if isinstance(value, dict) and isinstance(value.get("ids"), list):
+        return [_option_id_for_value(item, ids_by_label) for item in value["ids"]]
+    if isinstance(value, (list, tuple, set)):
+        return [_option_id_for_value(item, ids_by_label) for item in value]
+    if value in (None, ""):
+        return []
+    return [_option_id_for_value(value, ids_by_label)]
+
+
+def _option_id_for_value(value: Any, ids_by_label: dict[Any, Any]) -> Any:
+    if isinstance(value, dict):
+        option_value = _option_value(value)
+        if option_value is not _MISSING:
+            return option_value
+        label = _option_label(value)
+        if label is not None:
+            return ids_by_label.get(label, ids_by_label.get(str(label), label))
+    return ids_by_label.get(value, ids_by_label.get(str(value), value))
 
 
 def _option_from_list_item(value: Any) -> dict[str, Any]:
@@ -532,7 +638,7 @@ def _build_resilient_client(
     org: str | int,
     api_key_id: str | None = None,
     api_key_secret: str | None = None,
-    user_name: str | None = None,
+    email: str | None = None,
     password: str | None = None,
     cafile: str | bool = False,
 ) -> Any:
@@ -547,7 +653,7 @@ def _build_resilient_client(
             org=org,
             api_key_id=api_key_id,
             api_key_secret=api_key_secret,
-            user_name=user_name,
+            email=email,
             password=password,
             cafile=cafile,
         )
@@ -564,24 +670,24 @@ def build_resilient_options(
     org: str | int | None,
     api_key_id: str | None = None,
     api_key_secret: str | None = None,
-    user_name: str | None = None,
+    email: str | None = None,
     password: str | None = None,
     cafile: str | bool = False,
 ) -> dict[str, Any]:
     missing = [name for name, value in (("host", host), ("org", org)) if value in (None, "")]
     has_api_key_id = bool(api_key_id)
     has_api_key_secret = bool(api_key_secret)
-    has_user_name = bool(user_name)
+    has_email = bool(email)
     has_password = bool(password)
 
     if has_api_key_id != has_api_key_secret:
         missing.append("api_key_secret" if has_api_key_id else "api_key_id")
-    if has_user_name != has_password:
-        missing.append("password" if has_user_name else "user_name")
-    if has_api_key_id and has_user_name:
-        raise SoarClientError("provide either API key credentials or username/password credentials, not both")
-    if not (has_api_key_id or has_user_name):
-        missing.append("api_key_id/api_key_secret or user_name/password")
+    if has_email != has_password:
+        missing.append("password" if has_email else "email")
+    if has_api_key_id and has_email:
+        raise SoarClientError("provide either API key credentials or email/password credentials, not both")
+    if not (has_api_key_id or has_email):
+        missing.append("api_key_id/api_key_secret or email/password")
     if missing:
         raise SoarClientError(f"missing required real mode setting(s): {', '.join(missing)}")
 
@@ -589,5 +695,5 @@ def build_resilient_options(
     if has_api_key_id:
         opts.update({"api_key_id": api_key_id, "api_key_secret": api_key_secret})
     else:
-        opts.update({"email": user_name, "user_name": user_name, "password": password})
+        opts.update({"email": email, "password": password})
     return opts

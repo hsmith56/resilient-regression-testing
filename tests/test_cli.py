@@ -21,7 +21,7 @@ def test_real_mode_requires_direct_credentials(capsys):
     assert "real mode missing required option" in captured.err
     assert "--host" in captured.err
     assert "--org" in captured.err
-    assert "--api-key-id/api-key-secret or user-name/password" in captured.err
+    assert "--api-key-id/api-key-secret or email/password" in captured.err
 
 def test_real_mode_requires_matching_api_key_pair(capsys):
     exit_code = cli.main(["run", "scenarios/example.yaml", "--host", "https://soar.example.test", "--org", "201", "--api-key-id", "id"])
@@ -30,8 +30,8 @@ def test_real_mode_requires_matching_api_key_pair(capsys):
     assert exit_code == 2
     assert "--api-key-secret" in captured.err
 
-def test_real_mode_requires_matching_user_password_pair(capsys):
-    exit_code = cli.main(["run", "scenarios/example.yaml", "--host", "https://soar.example.test", "--org", "201", "--user-name", "user@example.test"])
+def test_real_mode_requires_matching_email_password_pair(capsys):
+    exit_code = cli.main(["run", "scenarios/example.yaml", "--host", "https://soar.example.test", "--org", "201", "--email", "user@example.test"])
 
     captured = capsys.readouterr()
     assert exit_code == 2
@@ -49,7 +49,7 @@ def test_real_mode_rejects_both_credential_types(capsys):
         "id",
         "--api-key-secret",
         "secret",
-        "--user-name",
+        "--email",
         "user@example.test",
         "--password",
         "password",
@@ -57,7 +57,7 @@ def test_real_mode_rejects_both_credential_types(capsys):
 
     captured = capsys.readouterr()
     assert exit_code == 2
-    assert "either API key credentials or username/password credentials, not both" in captured.err
+    assert "either API key credentials or email/password credentials, not both" in captured.err
 
 def test_dry_run_does_not_require_credentials(monkeypatch):
     monkeypatch.setattr(cli, "load_scenarios", lambda paths: [])
@@ -98,7 +98,7 @@ def test_real_mode_selects_real_client_with_api_key_credentials(monkeypatch):
         "org": "201",
         "api_key_id": "id",
         "api_key_secret": "secret",
-        "user_name": None,
+        "email": None,
         "password": None,
         "cafile": False,
     }
@@ -132,7 +132,7 @@ def test_real_mode_passes_cafile_when_provided(monkeypatch):
     assert FakeRunner.last_client.kwargs["cafile"] == "/path/to/ca.pem"
 
 
-def test_real_mode_selects_real_client_with_username_password(monkeypatch):
+def test_real_mode_selects_real_client_with_email_password(monkeypatch):
     class FakeRealClient:
         def __init__(self, **kwargs):
             self.kwargs = kwargs
@@ -148,7 +148,7 @@ def test_real_mode_selects_real_client_with_username_password(monkeypatch):
         "https://soar.example.test",
         "--org",
         "201",
-        "--user-name",
+        "--email",
         "user@example.test",
         "--password",
         "password",
@@ -160,7 +160,7 @@ def test_real_mode_selects_real_client_with_username_password(monkeypatch):
         "org": "201",
         "api_key_id": None,
         "api_key_secret": None,
-        "user_name": "user@example.test",
+        "email": "user@example.test",
         "password": "password",
         "cafile": False,
     }
