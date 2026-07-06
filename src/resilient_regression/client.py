@@ -135,6 +135,15 @@ class BaseSoarClient:
     def update_task(self, incident_id: int, task_id: int, fields: dict[str, Any]) -> dict[str, Any]:
         raise UnsupportedRealActionError("update-task is not supported in real mode yet")
 
+    def get_tasks_for_inc(self, incident_id: int) -> list[dict[str, Any]]:
+        raise UnsupportedRealActionError("get-tasks-for-inc is not supported in real mode yet")
+
+    def close_task(self, incident_id: int, name: str) -> dict[str, Any]:
+        task = find_task_by_name(self.get_tasks_for_inc(incident_id), name)
+        if task is None:
+            raise KeyError(f"task named {name!r} not found for incident {incident_id}")
+        return self.update_task(incident_id, int(task["id"]), {**task, "status": "C"})
+
     def run_script(self, incident_id: int, fields: dict[str, Any]) -> dict[str, Any]:
         raise UnsupportedRealActionError("run-script is dry-run only and is not supported in real mode")
 
@@ -202,6 +211,18 @@ class MockSoarClient(BaseSoarClient):
                 self._apply_fields(task, fields)
                 return deepcopy(task)
         raise KeyError(f"task {task_id} not found")
+
+    def get_tasks_for_inc(self, incident_id: int) -> list[dict[str, Any]]:
+        incident = self._require_incident(incident_id)
+        return [
+            {
+                "child_cats": [],
+                "child_tasks": deepcopy(incident["tasks"]),
+                "name": "Tasks",
+                "parent_id": "",
+                "status": "O",
+            }
+        ]
 
     def close_incident(self, incident_id: int, fields: dict[str, Any] | None = None) -> dict[str, Any]:
         incident = self._require_incident(incident_id)
@@ -321,6 +342,21 @@ class RealSoarClient(BaseSoarClient):
             payload.update(fields)
         return self.update_incident(incident_id, payload)
 
+    def get_tasks_for_inc(self, incident_id: int) -> list[dict[str, Any]]:
+        tasktree = self._request("get", f"/incidents/{incident_id}/tasktree")
+        if not isinstance(tasktree, list):
+            raise SoarClientError(f"SOAR API GET /incidents/{incident_id}/tasktree returned unexpected response")
+        return tasktree
+
+    def close_task(self, incident_id: int, name: str) -> dict[str, Any]:
+        task = find_task_by_name(self.get_tasks_for_inc(incident_id), name)
+        if task is None:
+            raise KeyError(f"task named {name!r} not found for incident {incident_id}")
+        payload = deepcopy(task)
+        payload["status"] = "C"
+        response = self._request("put", f"/tasks/{int(payload['id'])}", payload)
+        return response if response else payload
+
     def delete_incident(self, incident_id: int) -> None:
         if not self.allow_delete:
             raise UnsupportedRealActionError("delete incident is disabled")
@@ -353,7 +389,7 @@ class RealSoarClient(BaseSoarClient):
         payload: Any | None = None,
         timeout: int | None = None,
         **request_kwargs: Any,
-    ) -> dict[str, Any]:
+    ) -> Any:
         try:
             client_method = getattr(self._client, method)
             kwargs = {"timeout": timeout} if timeout is not None and _accepts_keyword(client_method, "timeout") else {}
@@ -364,7 +400,29 @@ class RealSoarClient(BaseSoarClient):
                 result = client_method(path, payload, **kwargs)
         except Exception as exc:
             raise SoarClientError(f"SOAR API {method.upper()} {path} failed") from exc
-        return result or {}
+        return result if result is not None else {}
+
+def find_task_by_name(tasktree: Any, name: str) -> dict[str, Any] | None:
+    for task in _iter_tasktree_tasks(tasktree):
+        if task.get("name") == name:
+            return deepcopy(task)
+    return None
+
+
+def _iter_tasktree_tasks(node: Any) -> list[dict[str, Any]]:
+    tasks: list[dict[str, Any]] = []
+    if isinstance(node, list):
+        for item in node:
+            tasks.extend(_iter_tasktree_tasks(item))
+    elif isinstance(node, dict):
+        child_tasks = node.get("child_tasks")
+        if isinstance(child_tasks, list):
+            tasks.extend(task for task in child_tasks if isinstance(task, dict))
+        child_cats = node.get("child_cats")
+        if isinstance(child_cats, list):
+            tasks.extend(_iter_tasktree_tasks(child_cats))
+    return tasks
+
 
 def _iter_field_definitions(fields: Any) -> list[dict[str, Any]]:
     if isinstance(fields, list):

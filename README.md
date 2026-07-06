@@ -178,6 +178,7 @@ Cleanup stays scoped to incidents created during the current run. Scenario-provi
 | `add-note` | Appends a mock note. | Not supported yet; fails clearly. |
 | `add-task` | Appends a mock task and stores `${task.*}` variables. | Not supported yet; fails clearly. |
 | `update-task` | Updates latest mock task or explicit task `id`. | Not supported yet; fails clearly. |
+| `close-task` | Finds a mock task by `name` and sets `status` to `C`. | Fetches `GET /incidents/{incident_id}/tasktree`, finds the task by `name`, and `PUT`s the full task object to `/tasks/{task_id}` with `status: C`. |
 | `run-script` | Records a mock script run with inputs/result. | Dry-run only; fails clearly. |
 
 For real `update-inc`, custom fields can be written as `properties.api_name` or `incident.properties.api_name` in YAML. The runner passes only `api_name` into `resilient.Patch.add_value(...)`, matching IBM SOAR's custom-field patch behavior.
@@ -191,9 +192,9 @@ Variables can be used in action values. Incident and task values are intentional
 | `${incident.id}` | Latest created, updated, closed, or targeted incident | Different from task id |
 | `${incident.name}` | Latest incident `name` | Different from task name |
 | `${incident.status}` | Latest incident `status` | Defaults to `Active`, becomes `Closed` after close |
-| `${task.id}` | Latest created or updated task | Different from incident id |
+| `${task.id}` | Latest created, updated, or closed task | Different from incident id |
 | `${task.name}` | Latest task `name` | Different from incident name |
-| `${task.status}` | Latest task `status` | Defaults to `Open` unless specified |
+| `${task.status}` | Latest task `status` | Defaults to `Open` unless specified; `close-task` sets `C` |
 
 ### Validation
 

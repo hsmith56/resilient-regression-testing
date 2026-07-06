@@ -135,6 +135,20 @@ class ScenarioRunner:
             result.steps.append(StepResult(name=step.name, action="update-task"))
             ran_action = True
 
+        if step.close_task is not None:
+            incident_id = _require_incident_id(incident_id, step.name, "close-task")
+            close_task_fields = step.close_task if isinstance(step.close_task, dict) else {"name": step.close_task}
+            resolved = _resolve_value(close_task_fields, variables)
+            task_name = resolved.get("name")
+            if not task_name:
+                raise RuntimeError(f"step {step.name} close-task requires name")
+            task = self.client.close_task(incident_id, str(task_name))
+            task_id = int(task["id"])
+            _store_task_variables(variables, task)
+            _store_incident_variables(variables, self.client.get_incident(incident_id))
+            result.steps.append(StepResult(name=step.name, action="close-task"))
+            ran_action = True
+
         if step.close_incident is not None:
             incident_id = _require_incident_id(incident_id, step.name, "close-incident")
             close_fields = step.close_incident if isinstance(step.close_incident, dict) else {"status": step.close_incident}

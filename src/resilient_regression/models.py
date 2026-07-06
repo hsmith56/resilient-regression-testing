@@ -17,6 +17,7 @@ class ScenarioStep(BaseModel):
     add_note: dict[str, Any] | str | None = Field(default=None, alias="add-note")
     add_task: dict[str, Any] | None = Field(default=None, alias="add-task")
     update_task: dict[str, Any] | None = Field(default=None, alias="update-task")
+    close_task: dict[str, Any] | str | None = Field(default=None, alias="close-task")
     close_incident: dict[str, Any] | str | None = Field(default=None, alias="close-incident")
     run_script: dict[str, Any] | None = Field(default=None, alias="run-script")
     wait_before_run: str | int | float | None = Field(default=None, alias="wait-before-run")
@@ -31,6 +32,7 @@ class ScenarioStep(BaseModel):
             self.add_note,
             self.add_task,
             self.update_task,
+            self.close_task,
             self.close_incident,
             self.run_script,
             self.wait_before_run,

@@ -20,6 +20,8 @@ class RecordingRestClient:
         self.calls: list[tuple[Any, ...]] = []
         self.incidents: dict[int, dict[str, Any]] = {}
         self.field_defs: dict[str, Any] = {"fields": []}
+        self.tasktree: list[dict[str, Any]] = []
+        self.tasks: dict[int, dict[str, Any]] = {}
 
     def post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         self.calls.append(("post", path, deepcopy(payload)))
@@ -38,18 +40,24 @@ class RecordingRestClient:
                 set_dotted(self.incidents[1], f"properties.{key}", value)
         return self.incidents[1]
 
-    def get(self, path: str) -> dict[str, Any]:
+    def get(self, path: str) -> Any:
         self.calls.append(("get", path, None))
         if path == "/types/incident/fields":
             return self.field_defs
+        if path.endswith("/tasktree"):
+            return deepcopy(self.tasktree)
         return self.incidents[1]
 
     def delete(self, path: str) -> dict[str, Any]:
         self.calls.append(("delete", path, None))
         return {}
 
-    def put(self, path: str, payload: list[int]) -> dict[str, Any]:
-        self.calls.append(("put", path, payload))
+    def put(self, path: str, payload: Any) -> dict[str, Any]:
+        self.calls.append(("put", path, deepcopy(payload)))
+        if path.startswith("/tasks/"):
+            task_id = int(path.removeprefix("/tasks/"))
+            self.tasks[task_id] = deepcopy(payload)
+            return self.tasks[task_id]
         for incident_id in payload:
             self.incidents.pop(incident_id, None)
         return {}
@@ -83,6 +91,31 @@ def test_patch_field_names_strip_incident_and_properties_prefixes():
     assert normalize_patch_field_name("properties.test_field") == "test_field"
     assert normalize_patch_field_name("incident.properties.test_field") == "test_field"
     assert normalize_patch_field_name("name") == "name"
+
+
+def test_real_client_closes_task_by_name_using_tasktree_and_task_put():
+    rest_client = RecordingRestClient()
+    rest_client.incidents[1] = {"id": 1, "name": "Existing", "status": "Active"}
+    rest_client.tasktree = [
+        {
+            "child_cats": [],
+            "child_tasks": [
+                {"id": 12345, "name": "Task to Close", "status": "O", "instructions": "keep me"},
+            ],
+            "name": "Triage",
+            "parent_id": "",
+            "status": "O",
+        }
+    ]
+    client = RealSoarClient("https://soar.example.test", "201", resilient_client=rest_client)
+
+    task = client.close_task(1, "Task to Close")
+
+    assert task == {"id": 12345, "name": "Task to Close", "status": "C", "instructions": "keep me"}
+    assert rest_client.calls == [
+        ("get", "/incidents/1/tasktree", None),
+        ("put", "/tasks/12345", {"id": 12345, "name": "Task to Close", "status": "C", "instructions": "keep me"}),
+    ]
 
 
 def test_real_client_resolves_dropdown_ids_from_field_metadata():

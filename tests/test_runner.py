@@ -124,6 +124,24 @@ def test_note_task_script_and_close_actions_share_incident_and_task_variables():
     ]
 
 
+def test_close_task_closes_task_by_name_from_tasktree():
+    scenario = Scenario(
+        id="close-task-by-name",
+        steps=[
+            ScenarioStep(name="create incident", create_inc={"name": "Incident A"}),
+            ScenarioStep(name="add task", add_task={"name": "Task to Close", "status": "O"}),
+            ScenarioStep(name="close task by name", close_task={"name": "Task to Close"}),
+        ],
+        validate={"tasks.0.name": "Task to Close", "tasks.0.status": "C"},
+    )
+    runner = ScenarioRunner(config=RunnerConfig(dry_run=True))
+
+    report = runner.run([scenario])
+
+    assert report.passed is True
+    assert [step.action for step in report.results[0].steps] == ["create-inc", "add-task", "close-task"]
+
+
 def test_complex_workflow_handles_multiple_notes_multiple_tasks_explicit_task_ids_and_script_results():
     scenario = Scenario(
         id="multi-operation-workflow-validates-notes-two-tasks-script-result-and-close-metadata",
