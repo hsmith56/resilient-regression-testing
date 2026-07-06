@@ -71,7 +71,12 @@ def _validate_assertion(
 
 
 def _equals(path: str, actual: Any, expected: Any, value_resolver: ValueResolver | None) -> bool:
-    return actual == expected or _resolve_actual(path, actual, value_resolver) == expected
+    resolved_actual = _resolve_actual(path, actual, value_resolver)
+    if actual == expected or resolved_actual == expected:
+        return True
+    if isinstance(resolved_actual, (list, tuple, set)) and not isinstance(expected, (list, tuple, set)):
+        return expected in resolved_actual
+    return False
 
 
 def _resolve_actual(path: str, actual: Any, value_resolver: ValueResolver | None) -> Any:

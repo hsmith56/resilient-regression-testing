@@ -138,6 +138,25 @@ def test_real_client_resolves_dropdown_ids_from_field_metadata():
     assert rest_client.calls.count(("get", "/types/incident/fields", None)) == 1
 
 
+def test_real_client_resolves_multiselect_property_values_from_field_metadata():
+    rest_client = RecordingRestClient()
+    rest_client.field_defs = {
+        "fields": [
+            {
+                "name": "tags",
+                "multi_select_values": [
+                    {"id": 201, "name": "Phishing"},
+                    {"id": 202, "name": "Malware"},
+                ],
+            }
+        ]
+    }
+    client = RealSoarClient("https://soar.example.test", "201", resilient_client=rest_client)
+
+    assert client.resolve_field_value("properties.tags", [201, {"id": 202}]) == ["Phishing", "Malware"]
+    assert client.resolve_field_value("properties.tags", {"ids": [201, 202]}) == ["Phishing", "Malware"]
+
+
 def test_build_resilient_options_supports_api_key_credentials():
     opts = build_resilient_options(
         host="https://soar.example.test",

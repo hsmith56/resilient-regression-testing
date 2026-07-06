@@ -328,13 +328,7 @@ class RealSoarClient(BaseSoarClient):
         labels = self._get_field_value_labels().get(field_name)
         if not labels:
             return value
-        if isinstance(value, list):
-            return [labels.get(item, labels.get(str(item), item)) for item in value]
-        if isinstance(value, tuple):
-            return tuple(labels.get(item, labels.get(str(item), item)) for item in value)
-        if isinstance(value, set):
-            return {labels.get(item, labels.get(str(item), item)) for item in value}
-        return labels.get(value, labels.get(str(value), value))
+        return _resolve_option_value(value, labels)
 
     def close_incident(self, incident_id: int, fields: dict[str, Any] | None = None) -> dict[str, Any]:
         payload = {"status": "Closed"}
@@ -450,25 +444,60 @@ def _field_value_labels(field: dict[str, Any]) -> dict[Any, str]:
         value = _option_value(option)
         label = _option_label(option)
         if value is not _MISSING and label is not None:
-            labels[value] = label
-            labels[str(value)] = label
+            _store_option_label(labels, value, label)
     return labels
 
 
 def _iter_field_options(field: dict[str, Any]) -> list[dict[str, Any]]:
-    for key in ("values", "options", "select_values"):
+    for key in ("values", "options", "select_values", "multi_select_values", "multiselect_values"):
         value = field.get(key)
         if isinstance(value, list):
-            return [option for option in value if isinstance(option, dict)]
+            return [_option_from_list_item(option) for option in value]
         if isinstance(value, dict):
             return [_option_from_mapping(item_key, item_value) for item_key, item_value in value.items()]
     return []
+
+
+def _option_from_list_item(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    return {"value": value, "label": str(value)}
 
 
 def _option_from_mapping(key: Any, value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return {"value": key, **value}
     return {"value": key, "label": value}
+
+
+def _store_option_label(labels: dict[Any, str], value: Any, label: str) -> None:
+    if isinstance(value, (list, dict, set)):
+        return
+    labels[value] = label
+    labels[str(value)] = label
+
+
+def _resolve_option_value(value: Any, labels: dict[Any, str]) -> Any:
+    if isinstance(value, list):
+        return [_resolve_option_value(item, labels) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_resolve_option_value(item, labels) for item in value)
+    if isinstance(value, set):
+        return {_resolve_option_value(item, labels) for item in value}
+    if isinstance(value, dict):
+        ids = value.get("ids")
+        if isinstance(ids, list):
+            return [_resolve_option_value(item, labels) for item in ids]
+        option_value = _option_value(value)
+        if option_value is not _MISSING:
+            resolved = _resolve_option_value(option_value, labels)
+            if resolved != option_value:
+                return resolved
+        label = _option_label(value)
+        if label is not None:
+            return label
+        return {key: _resolve_option_value(item, labels) for key, item in value.items()}
+    return labels.get(value, labels.get(str(value), value))
 
 
 def _option_value(option: dict[str, Any]) -> Any:

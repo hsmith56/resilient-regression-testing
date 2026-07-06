@@ -72,6 +72,16 @@ def test_value_resolver_compares_dropdown_id_to_label():
     assert failures == []
 
 
+def test_value_resolver_allows_scalar_expected_for_resolved_multiselect_actual():
+    failures = validate_incident(
+        {"properties": {"tags": {"ids": [201, 202]}}},
+        {"properties.tags": "Phishing"},
+        value_resolver=lambda path, value: ["Phishing", "Malware"],
+    )
+
+    assert failures == []
+
+
 def test_value_resolver_reports_mapped_actual_on_failure():
     failures = validate_incident(
         {"properties": {"severity": 124}},
