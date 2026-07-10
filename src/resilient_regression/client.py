@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 import time
 from copy import deepcopy
 from typing import Any
@@ -446,8 +447,49 @@ class RealSoarClient(BaseSoarClient):
             else:
                 result = client_method(path, payload, **kwargs)
         except Exception as exc:
-            raise SoarClientError(f"SOAR API {method.upper()} {path} failed") from exc
+            detail = _format_api_error(exc)
+            raise SoarClientError(f"SOAR API {method.upper()} {path} failed: {detail}") from exc
         return result if result is not None else {}
+
+def _format_api_error(exc: Exception) -> str:
+    """Return safe, actionable details from HTTP-client exceptions."""
+    response = getattr(exc, "response", None)
+    status_code = getattr(response, "status_code", None) or getattr(exc, "status_code", None)
+    parts = [f"HTTP {status_code}" if status_code is not None else "request error"]
+
+    body = _response_error_body(response)
+    message = str(exc).strip()
+    if body:
+        parts.append(body)
+    if message and message != body:
+        parts.append(message)
+    return "; ".join(parts)
+
+def _response_error_body(response: Any) -> str | None:
+    if response is None:
+        return None
+    try:
+        body = response.json()
+    except Exception:
+        body = getattr(response, "text", None) or getattr(response, "content", None)
+    if isinstance(body, bytes):
+        body = body.decode("utf-8", errors="replace")
+    if isinstance(body, (dict, list)):
+        body = json.dumps(_redact_error_body(body), default=str, separators=(",", ":"))
+    if not isinstance(body, str):
+        return None
+    body = body.strip()
+    return body[:2000] if body else None
+
+def _redact_error_body(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: "[REDACTED]" if any(secret in key.lower() for secret in ("password", "secret", "token", "api_key")) else _redact_error_body(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_error_body(item) for item in value]
+    return value
 
 def find_task_by_name(tasktree: Any, name: str) -> dict[str, Any] | None:
     for task in _iter_tasktree_tasks(tasktree):

@@ -24,6 +24,7 @@ update-properties-and-type-check:
         description: Regression test for incident property updates
         properties.field_1: field_1_val
         properties.field_2: field_2_val
+        properties.example_date_val: 2026/07/06 # YYYY/MM/DD -> epoch milliseconds
         type_ids:
           - expected_incident_type_val
   - wait before updating incident without sleeping in dry-run:
@@ -34,5 +35,6 @@ update-properties-and-type-check:
   - validate:
       properties.field_1: field_1_val
       properties.field_5: expected_val_field_5
+      properties.example_date_val: 1783296000000
       incident.type_ids:
         contains: expected_incident_type_val

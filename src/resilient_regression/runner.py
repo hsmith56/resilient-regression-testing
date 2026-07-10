@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from .cleanup import cleanup_created_incidents
@@ -12,6 +13,7 @@ from .validators import validate_incident
 
 
 _VARIABLE_RE = re.compile(r"\$\{([^}]+)\}")
+_DATE_RE = re.compile(r"^(\d{4})/(\d{2})/(\d{2})$")
 
 
 @dataclass
@@ -210,9 +212,18 @@ def _resolve_value(value: Any, variables: dict[str, Any]) -> Any:
     if isinstance(value, str):
         full_match = _VARIABLE_RE.fullmatch(value)
         if full_match:
-            return variables.get(full_match.group(1), value)
-        return _VARIABLE_RE.sub(lambda match: str(variables.get(match.group(1), match.group(0))), value)
+            resolved_variable = variables.get(full_match.group(1), value)
+            return _parse_date_epoch_ms(resolved_variable) if isinstance(resolved_variable, str) else resolved_variable
+        resolved = _VARIABLE_RE.sub(lambda match: str(variables.get(match.group(1), match.group(0))), value)
+        return _parse_date_epoch_ms(resolved)
     return value
+
+def _parse_date_epoch_ms(value: str) -> str | int:
+    match = _DATE_RE.fullmatch(value)
+    if not match:
+        return value
+    year, month, day = (int(part) for part in match.groups())
+    return int(datetime(year, month, day, tzinfo=timezone.utc).timestamp() * 1000)
 
 
 def _parse_wait_seconds(value: str | int | float) -> float:

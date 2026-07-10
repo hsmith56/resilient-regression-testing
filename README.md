@@ -183,6 +183,12 @@ Cleanup stays scoped to incidents created during the current run. Scenario-provi
 
 For real `update-inc`, custom fields can be written as `properties.api_name` or `incident.properties.api_name` in YAML. The runner passes only `api_name` into `resilient.Patch.add_value(...)`, matching IBM SOAR's custom-field patch behavior.
 
+Date fields can use `YYYY/MM/DD` syntax. The runner converts matching values to epoch milliseconds at UTC midnight because Resilient stores dates in milliseconds, not seconds:
+
+```yaml
+properties.example_date_val: 2026/07/06 # becomes 1783296000000
+```
+
 ### Pre-defined Variables
 
 Variables can be used in action values. Incident and task values are intentionally separate.

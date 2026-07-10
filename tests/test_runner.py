@@ -211,6 +211,26 @@ def test_incident_response_fields_are_available_as_dotted_variables():
     assert report.passed is True
 
 
+def test_basic_date_strings_are_converted_to_resilient_epoch_ms():
+    scenario = Scenario(
+        id="date-syntax-converts-to-epoch-ms",
+        steps=[
+            ScenarioStep(
+                name="create incident with date property",
+                create_inc={"name": "Date Test", "properties.example_date_val": "2026/07/06"},
+            )
+        ],
+        validate={"properties.example_date_val": 1783296000000},
+    )
+    client = MockSoarClient()
+    runner = ScenarioRunner(client=client, config=RunnerConfig(dry_run=True, no_cleanup=True))
+
+    report = runner.run([scenario])
+
+    assert report.passed is True
+    assert client.get_incident(1)["properties"]["example_date_val"] == 1783296000000
+
+
 def test_wait_only_step_is_reported_without_sleeping_in_dry_run():
     scenario = Scenario(
         id="wait-step-is-recorded-but-does-not-sleep-in-dry-run",

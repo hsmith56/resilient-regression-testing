@@ -15,6 +15,29 @@ class FakePatch:
 from resilient_regression.models import Scenario, ScenarioStep
 from resilient_regression.runner import RunnerConfig, ScenarioRunner
 
+class ApiFailure(Exception):
+    def __init__(self, message: str, response: Any) -> None:
+        super().__init__(message)
+        self.response = response
+
+
+class ErrorResponse:
+    status_code = 422
+    text = ""
+
+    def json(self) -> dict[str, Any]:
+        return {
+            "message": "Invalid patch field: properties.priority",
+            "errors": [{"field": "priority", "message": "unknown field"}],
+            "api_key_secret": "must-not-leak",
+        }
+
+
+class FailingRestClient:
+    def patch(self, path: str, payload: Any, **kwargs: Any) -> None:
+        raise ApiFailure("Unprocessable Entity", ErrorResponse())
+
+
 class RecordingRestClient:
     def __init__(self) -> None:
         self.calls: list[tuple[Any, ...]] = []
@@ -100,6 +123,21 @@ def test_real_client_uses_resilient_client_methods_and_builds_dotted_payloads(mo
     assert rest_client.calls[3] == ("patch", "/incidents/1", {"test_field": "updated"}, {"overwrite_conflict": True})
     assert rest_client.calls[4] == ("get", "/incidents/1", None)
     assert updated["properties"] == {"test_field": "updated"}
+
+def test_real_client_api_failures_include_http_status_and_safe_response_details():
+    client = RealSoarClient("https://soar.example.test", "201", resilient_client=FailingRestClient())
+
+    with pytest.raises(SoarClientError) as exc_info:
+        client._request("patch", "/incidents/123", {"changes": []})
+
+    error = str(exc_info.value)
+    assert "SOAR API PATCH /incidents/123 failed" in error
+    assert "HTTP 422" in error
+    assert "Invalid patch field: properties.priority" in error
+    assert "Unprocessable Entity" in error
+    assert "must-not-leak" not in error
+    assert '"api_key_secret":"[REDACTED]"' in error
+
 
 def test_patch_field_names_strip_incident_and_properties_prefixes():
     assert normalize_patch_field_name("properties.test_field") == "test_field"
